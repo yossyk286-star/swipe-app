@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 
 'use client';
 
@@ -25,6 +26,7 @@ type PlaceDetails = {
   website: string | null;
   mapUrl: string | null;
   phone: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   openingHours: any | null; // { open_now, periods, weekday_text }
   types: string[];
   rating: number | null;
@@ -121,12 +123,18 @@ function DetailsModal({
 
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
-    fetch(`/api/details?placeId=${encodeURIComponent(placeId)}`, { cache:'no-store' })
-      .then(r => r.json())
-      .then(j => setD(j.details ?? null))
-      .catch(() => setD(null))
-      .finally(() => setLoading(false));
+    (async () => {
+      try {
+        setLoading(true);
+        const r = await fetch(`/api/details?placeId=${encodeURIComponent(placeId)}`, { cache:'no-store' });
+        const detailJson = await r.json();
+        setD(detailJson.details ?? null);
+      } catch {
+        setD(null);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [open, placeId]);
 
   const todayText = (() => {
@@ -294,6 +302,7 @@ function SwipeableCard({
 /** ------------ ページ本体 ------------ */
 export default function Home() {
   // テーマ切替
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [theme, setTheme] = useState<'light'|'dark'>(() => (typeof window !== 'undefined' && (localStorage.getItem('theme') as any)) || 'light');
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -351,11 +360,17 @@ export default function Home() {
       const params = new URLSearchParams({ q });
       if (withGeo) { params.set('lat', String(withGeo.lat)); params.set('lng', String(withGeo.lng)); }
       const res = await fetch(`/api/places?${params.toString()}`, { cache:'no-store', signal: abortRef.current.signal });
-      const json = await res.json();
 
-      const items: PlaceCard[] = (json.cards ?? [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const resJson = await res.json() as { cards?: any[] };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw: any[] = Array.isArray(resJson?.cards) ? (resJson.cards as any[]) : [];
+
+      const items: PlaceCard[] = raw
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .filter((p: any) => !!p.photoRef)
-        .map((p: any, idx: number) => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((p: any, idx: number): PlaceCard => ({
           id: p.placeId ?? `p-${idx}`,
           name: p.name ?? '名称不明',
           image: `/api/photo?ref=${encodeURIComponent(p.photoRef)}&maxwidth=1200`,
@@ -371,6 +386,7 @@ export default function Home() {
         .sort((a, b) => b.photosCount - a.photosCount);
 
       setDeck(items.slice(0, 30));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       if (e?.name !== 'AbortError') setError('検索に失敗しました。少し待ってから再実行してください。');
     } finally { setLoading(false); }
@@ -400,8 +416,8 @@ export default function Home() {
       } else {
         try {
           const r = await fetch(`/api/details?placeId=${encodeURIComponent(placeId)}`, { cache:'no-store' });
-          const j = await r.json();
-          const extra: string[] = (j.details?.photoRefs ?? []).filter(Boolean);
+          const detailJson = await r.json();
+          const extra: string[] = (detailJson.details?.photoRefs ?? []).filter(Boolean);
           detailsPhotosCacheRef.current[placeId] = extra;
           if (extra.length) {
             refs = Array.from(new Set([...(refs||[]), ...extra]));
@@ -698,6 +714,7 @@ export default function Home() {
                 return (
                   <button
                     key={t}
+                    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
                     onClick={() => setFavFilterTags(prev => { const n = new Set(prev); active ? n.delete(t) : n.add(t); return n; })}
                     style={{
                       padding:'4px 10px', borderRadius:999,
@@ -852,6 +869,7 @@ export default function Home() {
                       checked={checked}
                       onChange={(e)=> {
                         setSelectedFavIds(prev => {
+                          // eslint-disable-next-line @typescript-eslint/no-unused-expressions
                           const n = new Set(prev); e.target.checked ? n.add(f.id) : n.delete(f.id); return n;
                         });
                       }}

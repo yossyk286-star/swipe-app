@@ -61,6 +61,7 @@ export async function GET(req: NextRequest) {
       rating: r.rating ?? null,
       userRatingsTotal: r.user_ratings_total ?? 0,
       priceLevel: r.price_level ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       photoRefs: photos.map((ph: any) => ph.photo_reference) ?? [],
       lat: r.geometry?.location?.lat ?? null,
       lng: r.geometry?.location?.lng ?? null,
