@@ -213,6 +213,7 @@ function SwipeableCard({
   onSwiped,
   onSwipeUp,
   onTapImage,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   eager = false,
 }: {
   card: PlaceCard;
@@ -348,6 +349,7 @@ export default function Home() {
 
   const visible = useMemo(() => deck.slice(0, VISIBLE_STACK), [deck]);
   const top = visible[0];
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const rest = visible.slice(1);
 
   /** 検索 */
@@ -400,7 +402,8 @@ export default function Home() {
       { enableHighAccuracy:false, timeout:5000 }
     );
   }
-  useEffect(() => { tryGeolocateAndSearch(); /* eslint-disable-next-line */ }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { tryGeolocateAndSearch();   }, []);
 
   /** 画像切替（不足時は Details から補完） */
   async function nextPhotoWithFetch(placeId: string) {
