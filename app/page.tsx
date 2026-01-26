@@ -44,6 +44,20 @@ const SWIPE_THRESHOLD = 120;
 const VISIBLE_STACK = 3;
 const CARD_IMG_SIZE = 96;
 
+/** ------------ 画像URLヘルパー（再発防止） ------------ */
+const photoUrl = (ref: string, max = 1200) =>
+  `/api/photo?${new URLSearchParams({ ref, maxwidth: String(max) }).toString()}`;
+
+const getRefFromImageUrl = (u: string) => {
+  try {
+    const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
+    const url = new URL(u, base);
+    return url.searchParams.get('ref') ?? '';
+  } catch {
+    return '';
+  }
+};
+
 /** ------------ 永続化 ------------ */
 function usePersistentArray<T>(key: string, initial: T[]) {
   const [value, setValue] = useState<T[]>(() => {
@@ -176,7 +190,7 @@ function DetailsModal({
                 <div style={{ marginTop:14, fontWeight:700 }}>写真</div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:8 }}>
                   {d.photoRefs.slice(0,6).map((ref, i) => (
-                    <img key={i} src={`/api/photo?ref=${encodeURIComponent(ref)}&maxwidth=800`} alt={`ph-${i}`} style={{ width:'100%', height:120, objectFit:'cover', borderRadius:6 }} />
+                    <img key={i} src={photoUrl(encodeURIComponent(ref), 800)} alt={`ph-${i}`} style={{ width:'100%', height:120, objectFit:'cover', borderRadius:6 }} />
                   ))}
                 </div>
               </>
@@ -375,7 +389,7 @@ export default function Home() {
         .map((p: any, idx: number): PlaceCard => ({
           id: p.placeId ?? `p-${idx}`,
           name: p.name ?? '名称不明',
-          image: `/api/photo?ref=${encodeURIComponent(p.photoRef)}&maxwidth=1200`,
+          image: photoUrl(encodeURIComponent(p.photoRef), 1200),
           openNow: p.openNow ?? null,
           photosCount: typeof p.photosCount === 'number' ? p.photosCount : 1,
           photoRefs: (p.photoRefs ?? []) as string[],
@@ -434,8 +448,8 @@ export default function Home() {
       if (c.id !== placeId) return c;
       const total = c.photoRefs?.length || 1;
       const next = ((c.currentIdx ?? 0) + 1) % total;
-      const ref = c.photoRefs[next] ?? decodeURIComponent(c.image.split('ref=')[1]?.split('&')[0] ?? '');
-      return { ...c, currentIdx: next, image: `/api/photo?ref=${encodeURIComponent(ref)}&maxwidth=1200` };
+      const ref = c.photoRefs[next] ?? getRefFromImageUrl(c.image);
+      return { ...c, currentIdx: next, image: photoUrl(encodeURIComponent(ref), 1200) };
     }));
   }
 
