@@ -58,20 +58,28 @@ const getRefFromImageUrl = (u: string) => {
   }
 };
 
-/** ------------ 永続化 ------------ */
+/** ------------ 永続化（Hydration-safe 版） ------------ */
+/**
+ * 初回レンダーは `initial` を使い、マウント後に localStorage を反映。
+ * → SSR とクライアント初回を一致させ、Hydration mismatch を防ぐ。
+ */
 function usePersistentArray<T>(key: string, initial: T[]) {
-  const [value, setValue] = useState<T[]>(() => {
-    if (typeof window === 'undefined') return initial;
+  const [value, setValue] = useState<T[]>(initial); // 初回は initial（SSR と一致）
+
+  // マウント後に localStorage を反映
+  useEffect(() => {
     try {
       const raw = localStorage.getItem(key);
-      return raw ? (JSON.parse(raw) as T[]) : initial;
-    } catch { return initial; }
-  });
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (raw) setValue(JSON.parse(raw) as T[]);
+    } catch {}
+  }, [key]);
+
+  // 値が変わったら保存
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-    }
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
   }, [key, value]);
+
   return [value, setValue] as const;
 }
 
@@ -255,9 +263,28 @@ function SwipeableCard({
 
   // 画像エリア開始の上フリックのみ詳細（強め判定）
   const startRef = useRef<{x:number; y:number; t:number; inImage:boolean} | null>(null);
+
+  // 画像エリアの参照（スクロール抑止）
+  const imgAreaRef = useRef<HTMLDivElement | null>(null);
+
   const ANGLE_RATIO = 1.7;  // |dy| >= |dx|*1.7 で縦意図
   const MIN_DIST = 100;     // 上方向に100px以上
   const MIN_VEL = 0.7;      // 速度（px/ms）
+
+  // ネイティブの touchmove を passive:false でフック（ブラウザ差異対策の保険）
+  useEffect(() => {
+    const el = imgAreaRef.current;
+    if (!el) return;
+
+    const onTouchMoveNative = (ev: TouchEvent) => {
+      if (ev.cancelable) ev.preventDefault();
+    };
+
+    el.addEventListener('touchmove', onTouchMoveNative, { passive: false });
+    return () => {
+      el.removeEventListener('touchmove', onTouchMoveNative);
+    };
+  }, []);
 
   const onTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
@@ -284,7 +311,7 @@ function SwipeableCard({
         position:'absolute', inset:0, borderRadius:16, overflow:'hidden',
         background:'var(--card)', color:'var(--text)', boxShadow:'0 10px 30px var(--elev)',
         x, rotate,
-        // 縦スクロールはブラウザに任せる（B）
+        // 画像外は縦スクロールを許可
         touchAction:'pan-y',
         zIndex:1000
       }}
@@ -324,18 +351,29 @@ function SwipeableCard({
 
       {/* 画像エリア（ここでの上フリックのみ詳細） */}
       <div
-        style={{ position:'relative', width:'100%', height:'58%' }}
+        ref={imgAreaRef}
+        style={{
+          position:'relative', width:'100%', height:'58%',
+          touchAction:'none',                     // ← 画像上のスクロール/ズーム/パン抑止
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          overscrollBehavior:'contain' as any,    // ← 親へのオーバースクロール伝播抑止
+        }}
         data-image-area="true"
         aria-label="写真エリア（上にフリックで詳細、タップで写真切替）"
+        // 合成イベント経由の保険（cancelable のときのみ）
+        onTouchMove={(e) => {
+          const ne = (e.nativeEvent as unknown as TouchEvent);
+          if (ne?.cancelable) e.preventDefault();
+        }}
       >
         <AnimatedImage
           src={card.image}
           alt={card.name}
-          onClick={onTapImage}      // C: タップで写真切替
+          onClick={onTapImage}      // タップで写真切替
           variant="slide"
         />
 
-        {/* C: 「詳細」ピルボタン（左上配置） */}
+        {/* 「詳細」ピルボタン（左上配置） */}
         <button
           onClick={onSwipeUp}
           title="詳細を開く"
@@ -349,7 +387,7 @@ function SwipeableCard({
           詳細
         </button>
 
-        {/* C: タップヒント（右下の薄いピル） */}
+        {/* タップヒント（右下の薄いピル） */}
         <div
           aria-hidden="true"
           className="tap-hint"
@@ -363,7 +401,7 @@ function SwipeableCard({
           タップで写真切替
         </div>
 
-        {/* C: 下部ハンドル（↑ 詳細の視覚ヒント） → 薄く */}
+        {/* 下部ハンドル（↑ 詳細の視覚ヒント） */}
         <div
           aria-hidden="true"
           style={{
@@ -395,13 +433,21 @@ function SwipeableCard({
 
 /** ------------ ページ本体（タブバーなし） ------------ */
 export default function Home() {
-  // テーマ切替
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [theme, setTheme] = useState<'light'|'dark'>(() => (typeof window !== 'undefined' && (localStorage.getItem('theme') as any)) || 'light');
+  /** テーマ（Hydration-safe 版） */
+  const [theme, setTheme] = useState<'light'|'dark'>('light'); // SSR と合わせて 'light' で開始
+  // マウント後に localStorage から復元
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = localStorage.getItem('theme');
+      if (stored === 'dark' || stored === 'light') setTheme(stored as 'light'|'dark');
+    } catch {}
+  }, []);
+  // 反映
   useEffect(() => {
     if (typeof document !== 'undefined') {
       document.documentElement.setAttribute('data-theme', theme);
-      localStorage.setItem('theme', theme);
+      try { localStorage.setItem('theme', theme); } catch {}
     }
   }, [theme]);
 
@@ -412,7 +458,7 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null);
 
   const [deck, setDeck] = useState<PlaceCard[]>([]);
-  const [favorites, setFavorites] = usePersistentArray<Favorite>('favorites_v8', []);
+  const [favorites, setFavorites] = usePersistentArray<Favorite>('favorites_v8', []); // ← 初回は []（SSR と一致）
 
   // お気に入りフィルタ（タグ複数＋キーワード）
   const [favFilterText, setFavFilterText] = useState('');
@@ -494,7 +540,7 @@ export default function Home() {
       { enableHighAccuracy:false, timeout:5000 }
     );
   }
-  useEffect(() => { tryGeolocateAndSearch(); }, []); // 初回のみ
+  useEffect(() => { tryGeolocateAndSearch(); }, []); // 初回のみ（マウント後）
 
   /** 画像切替（不足時は Details から補完） */
   async function nextPhotoWithFetch(placeId: string) {
@@ -640,7 +686,8 @@ export default function Home() {
           border:'1px solid var(--border)', background:'var(--card)', color:'var(--text)'
         }}
       >
-        {theme === 'light' ? '🌙' : '🌞'}
+        {/* 初回の 🌙/🌞 のズレが気になる場合は suppressHydrationWarning を付ける */}
+        <span suppressHydrationWarning>{theme === 'light' ? '🌙' : '🌞'}</span>
       </button>
 
       {/* タイトル：Swipick */}
@@ -756,7 +803,10 @@ export default function Home() {
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
               <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                 <h2 style={{ margin:0, fontSize:16, fontWeight:700 }}>お気に入り</h2>
-                <span style={{ color:'var(--text-muted)', fontSize:12 }}>{favorites.length} 件</span>
+                {/* 件数の初回ズレを抑えるため suppressHydrationWarning を付与（任意） */}
+                <span style={{ color:'var(--text-muted)', fontSize:12 }} suppressHydrationWarning>
+                  {favorites.length} 件
+                </span>
               </div>
               <button
                 onClick={() => setShowGlobalAddBar(s => !s)}
