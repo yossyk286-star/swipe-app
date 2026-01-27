@@ -182,15 +182,27 @@ function DetailsModal({
               {todayText && <div><b>今日の営業時間</b><br/>{todayText}</div>}
               <div><b>評価</b>：{d.rating ?? '-'}（{d.userRatingsTotal}件）</div>
               {d.phone && <div><b>電話</b>：<a href={`tel:${d.phone}`} style={{ color:'var(--text)' }}>{d.phone}</a></div>}
-              {d.website && <div><b>公式サイト</b>：<a href={d.website} target="_blank" rel="noreferrer" style={{ color:'var(--text)', wordBreak:'break-all' }}>{d.website}</a></div>}
-              {d.mapUrl && <div><b>Googleマップ</b>：<a href={d.mapUrl} target="_blank" rel="noreferrer" style={{ color:'var(--text)' }}>{d.mapUrl}</a></div>}
+              {d.website && (
+                <div><b>公式サイト</b>：
+                  <a href={d.website} target="_blank" rel="noreferrer" style={{ color:'var(--text)', wordBreak:'break-all', textDecoration:'underline' }}>
+                    {d.website}
+                  </a>
+                </div>
+              )}
+              {d.mapUrl && (
+                <div><b>Googleマップ</b>：
+                  <a href={d.mapUrl} target="_blank" rel="noreferrer" style={{ color:'var(--text)', textDecoration:'underline' }}>
+                    {d.mapUrl}
+                  </a>
+                </div>
+              )}
             </div>
             {d.photoRefs?.length > 0 && (
               <>
                 <div style={{ marginTop:14, fontWeight:700 }}>写真</div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:8 }}>
                   {d.photoRefs.slice(0,6).map((ref, i) => (
-                    <img key={i} src={photoUrl(encodeURIComponent(ref), 800)} alt={`ph-${i}`} style={{ width:'100%', height:120, objectFit:'cover', borderRadius:6 }} />
+                    <img key={i} src={photoUrl(ref, 800)} alt={`ph-${i}`} style={{ width:'100%', height:120, objectFit:'cover', borderRadius:6 }} />
                   ))}
                 </div>
               </>
@@ -221,7 +233,7 @@ function CardDistance({ lat, lng }:{lat:number|null; lng:number|null}) {
   return <div>📏 {formatDistance(dist)}</div>;
 }
 
-/** ------------ 検索側：先頭カード ------------ */
+/** ------------ 検索側：先頭カード（B+C対応） ------------ */
 function SwipeableCard({
   card,
   onSwiped,
@@ -241,13 +253,29 @@ function SwipeableCard({
   const likeOpacity = useTransform(x, [40, 120], [0, 1]);
   const nopeOpacity = useTransform(x, [-120, -40], [1, 0]);
 
-  const touchStartY = useRef<number | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => { touchStartY.current = e.touches[0].clientY; };
+  // 画像エリア開始の上フリックのみ詳細（強め判定）
+  const startRef = useRef<{x:number; y:number; t:number; inImage:boolean} | null>(null);
+  const ANGLE_RATIO = 1.7;  // |dy| >= |dx|*1.7 で縦意図
+  const MIN_DIST = 100;     // 上方向に100px以上
+  const MIN_VEL = 0.7;      // 速度（px/ms）
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    const target = e.target as HTMLElement;
+    const inImage = !!target.closest('[data-image-area="true"]');
+    startRef.current = { x: t.clientX, y: t.clientY, t: performance.now(), inImage };
+  };
   const onTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartY.current == null) return;
-    const dy = e.changedTouches[0].clientY - touchStartY.current;
-    if (dy < -60) onSwipeUp();
-    touchStartY.current = null;
+    if (!startRef.current) return;
+    const end = e.changedTouches[0];
+    const dt = Math.max(1, performance.now() - startRef.current.t);
+    const dx = end.clientX - startRef.current.x;
+    const dy = end.clientY - startRef.current.y;
+    const vy = Math.abs(dy) / dt; // px/ms
+    const verticalIntent = Math.abs(dy) >= Math.abs(dx) * ANGLE_RATIO;
+    const strongUp = dy < -MIN_DIST && vy >= MIN_VEL;
+    if (startRef.current.inImage && verticalIntent && strongUp) onSwipeUp();
+    startRef.current = null;
   };
 
   return (
@@ -255,7 +283,10 @@ function SwipeableCard({
       style={{
         position:'absolute', inset:0, borderRadius:16, overflow:'hidden',
         background:'var(--card)', color:'var(--text)', boxShadow:'0 10px 30px var(--elev)',
-        x, rotate, touchAction:'none', zIndex:1000
+        x, rotate,
+        // 縦スクロールはブラウザに任せる（B）
+        touchAction:'pan-y',
+        zIndex:1000
       }}
       drag="x" dragElastic={0.2} dragConstraints={{ left: 0, right: 0 }}
       onDragEnd={(_, info) => {
@@ -291,22 +322,70 @@ function SwipeableCard({
         fontWeight:700, opacity:nopeOpacity, pointerEvents:'none', zIndex:5
       }}>NOPE</motion.div>
 
-      {/* 画像：アニメ付き切替 */}
-      <div style={{ width:'100%', height:'58%' }}>
+      {/* 画像エリア（ここでの上フリックのみ詳細） */}
+      <div
+        style={{ position:'relative', width:'100%', height:'58%' }}
+        data-image-area="true"
+        aria-label="写真エリア（上にフリックで詳細、タップで写真切替）"
+      >
         <AnimatedImage
           src={card.image}
           alt={card.name}
-          onClick={onTapImage}
-          variant="slide" // 'fade' も可
+          onClick={onTapImage}      // C: タップで写真切替
+          variant="slide"
         />
+
+        {/* C: 「詳細」ピルボタン（左上配置） */}
+        <button
+          onClick={onSwipeUp}
+          title="詳細を開く"
+          style={{
+            position:'absolute', left:10, top:10, zIndex:6,
+            padding:'6px 10px', borderRadius:999,
+            background:'rgba(0,0,0,0.55)', color:'#fff', border:'none', fontSize:12
+          }}
+          aria-label="詳細を開く"
+        >
+          詳細
+        </button>
+
+        {/* C: タップヒント（右下の薄いピル） */}
+        <div
+          aria-hidden="true"
+          className="tap-hint"
+          style={{
+            position:'absolute', right:10, bottom:10, zIndex:6,
+            padding:'6px 10px', borderRadius:999,
+            background:'rgba(0,0,0,0.45)', color:'#fff', fontSize:12,
+            pointerEvents:'none', userSelect:'none'
+          }}
+        >
+          タップで写真切替
+        </div>
+
+        {/* C: 下部ハンドル（↑ 詳細の視覚ヒント） → 薄く */}
+        <div
+          aria-hidden="true"
+          style={{
+            position:'absolute',
+            left:'50%', bottom:4, transform:'translateX(-50%)',
+            zIndex:6,
+            color:'rgba(255,255,255,0.55)',
+            fontSize:12,
+            textShadow:'0 1px 1px rgba(0,0,0,0.35)',
+            pointerEvents:'none', userSelect:'none'
+          }}
+        >
+          ↑ 詳細
+        </div>
       </div>
 
-      {/* 店名＋住所/時間/距離 */}
+      {/* 店名＋住所/時間/距離（ここはスクロール優先） */}
       <div style={{ padding:14 }}>
         <h2 style={{ margin:'0 0 6px', fontSize:18 }}>{card.name}</h2>
         <div style={{ color:'var(--text-muted)', fontSize:13, lineHeight:1.5 }}>
           {card.address && <div>📍 {card.address}</div>}
-          <div>🕒 {card.openNow === null ? '時間情報なし' : (card.openNow ? '営業中' : '営業時間外')}（詳細は上スワイプ）</div>
+          <div>🕒 {card.openNow === null ? '時間情報なし' : (card.openNow ? '営業中' : '営業時間外')}（詳細は写真で上フリック）</div>
           <CardDistance lat={card.lat} lng={card.lng} />
         </div>
       </div>
@@ -314,7 +393,7 @@ function SwipeableCard({
   );
 }
 
-/** ------------ ページ本体 ------------ */
+/** ------------ ページ本体（タブバーなし） ------------ */
 export default function Home() {
   // テーマ切替
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -363,8 +442,7 @@ export default function Home() {
 
   const visible = useMemo(() => deck.slice(0, VISIBLE_STACK), [deck]);
   const top = visible[0];
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const rest = visible.slice(1);
+  const visibleRest = useMemo(() => deck.slice(1, VISIBLE_STACK), [deck]);
 
   /** 検索 */
   async function searchCore(withGeo?: { lat: number; lng: number }) {
@@ -389,7 +467,7 @@ export default function Home() {
         .map((p: any, idx: number): PlaceCard => ({
           id: p.placeId ?? `p-${idx}`,
           name: p.name ?? '名称不明',
-          image: photoUrl(encodeURIComponent(p.photoRef), 1200),
+          image: photoUrl(p.photoRef, 1200),
           openNow: p.openNow ?? null,
           photosCount: typeof p.photosCount === 'number' ? p.photosCount : 1,
           photoRefs: (p.photoRefs ?? []) as string[],
@@ -416,8 +494,7 @@ export default function Home() {
       { enableHighAccuracy:false, timeout:5000 }
     );
   }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { tryGeolocateAndSearch();   }, []);
+  useEffect(() => { tryGeolocateAndSearch(); }, []); // 初回のみ
 
   /** 画像切替（不足時は Details から補完） */
   async function nextPhotoWithFetch(placeId: string) {
@@ -449,7 +526,7 @@ export default function Home() {
       const total = c.photoRefs?.length || 1;
       const next = ((c.currentIdx ?? 0) + 1) % total;
       const ref = c.photoRefs[next] ?? getRefFromImageUrl(c.image);
-      return { ...c, currentIdx: next, image: photoUrl(encodeURIComponent(ref), 1200) };
+      return { ...c, currentIdx: next, image: photoUrl(ref, 1200) };
     }));
   }
 
@@ -507,7 +584,6 @@ export default function Home() {
     const t = globalTagInput.trim();
     if (!t) return;
     if (userTags.includes(t)) {
-      // 既存ならメッセージだけ
       alert('既に存在するタグです');
     } else {
       setUserTags(prev => [...prev, t]);
@@ -516,7 +592,7 @@ export default function Home() {
     setShowGlobalAddBar(false);
   }
 
-  /** テーマ用 CSS 変数 */
+  /** テーマ用 CSS 変数（+ ヒントのフェードアウト） */
   const themeVars = `
     :root {
       --bg: #f5f7fb;
@@ -540,15 +616,18 @@ export default function Home() {
     }
     body { background: var(--bg); color: var(--text); }
     input, button { color: inherit; }
-  `;
 
-  const visibleRest = useMemo(() => deck.slice(1, VISIBLE_STACK), [deck]);
+    /* 2秒後に2秒かけてフェードアウト（1回） */
+    .tap-hint { animation: hintFade 2s ease 2s forwards; }
+    @keyframes hintFade { to { opacity: 0; visibility: hidden; } }
+  `;
 
   return (
     <main
       style={{
         minHeight:'100vh', background:'var(--bg)', color:'var(--text)',
-        display:'flex', flexDirection:'column', alignItems:'center', gap:16, padding:20, position:'relative'
+        display:'flex', flexDirection:'column', alignItems:'center', gap:16, padding:20,
+        position:'relative'
       }}
     >
       {/* テーマトグル（左上） */}
@@ -649,7 +728,7 @@ export default function Home() {
       </div>
 
       {/* お気に入り：タブ（一覧 / タグ追加） */}
-      <section style={{ width:360, maxWidth:'90vw' }}>
+      <section style={{ width:360, maxWidth:'90vw' }} data-favorites="true">
         {/* タブヘッダ */}
         <div style={{ display:'flex', gap:8, marginBottom:10 }}>
           {(['list','tag-add'] as const).map(k => {
@@ -673,7 +752,7 @@ export default function Home() {
 
         {favTab === 'list' ? (
           <>
-            {/* 見出し（件数 + 「タグを追加」→ 検索バー下にバーを表示） */}
+            {/* 見出し（件数 + 「タグを追加」） */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
               <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                 <h2 style={{ margin:0, fontSize:16, fontWeight:700 }}>お気に入り</h2>
@@ -697,7 +776,7 @@ export default function Home() {
               />
             </div>
 
-            {/* ← ここに小型の追加バー（ヘッダー右のボタンでトグル） */}
+            {/* 追加バー（トグル） */}
             {showGlobalAddBar && (
               <div style={{ display:'flex', gap:8, marginBottom:10 }}>
                 <input
@@ -731,7 +810,6 @@ export default function Home() {
                 return (
                   <button
                     key={t}
-                    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
                     onClick={() => setFavFilterTags(prev => { const n = new Set(prev); active ? n.delete(t) : n.add(t); return n; })}
                     style={{
                       padding:'4px 10px', borderRadius:999,
@@ -752,7 +830,7 @@ export default function Home() {
               )}
             </div>
 
-            {/* 一覧（横：画像 / 中央：テキスト / 右：＋タグ・🗑 を縦） */}
+            {/* 一覧（横：画像 / 中央：テキスト / 右：＋タグ・🗑 ） */}
             <div style={{ display:'grid', gap:10 }}>
               {filteredFavorites.length === 0 ? (
                 <div style={{ padding:12, borderRadius:8, background:'var(--card)', color:'var(--text-muted)', fontSize:14, boxShadow:'0 10px 30px var(--elev)' }}>
@@ -764,11 +842,11 @@ export default function Home() {
                     <div style={{ display:'flex', alignItems:'stretch', height: CARD_IMG_SIZE }}>
                       {/* 左：画像（タップで詳細） */}
                       <div onClick={() => { setDetailsPlaceId(f.id); setDetailsOpen(true); }}
-                           style={{ width: CARD_IMG_SIZE, height: CARD_IMG_SIZE, cursor:'pointer' }}>
+                           style={{ width: CARD_IMG_SIZE, height: CARD_IMG_SIZE, cursor:'pointer', position:'relative' }}>
                         <AnimatedImage src={f.image} alt={f.name} variant="fade" />
                       </div>
 
-                      {/* 中央：本文（タイトルタップで詳細）。高さ固定、オーバーフロー隠す */}
+                      {/* 中央：本文（タイトルタップで詳細） */}
                       <div
                         onClick={() => { setDetailsPlaceId(f.id); setDetailsOpen(true); }}
                         style={{ flex:1, padding:'8px 10px', minWidth:0, cursor:'pointer', overflow:'hidden' }}
@@ -799,7 +877,7 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* 右：縦スタック（＋タグ／🗑）。要素高さを画像に合わせ固定 */}
+                      {/* 右：縦スタック（＋タグ／🗑） */}
                       <div style={{
                         width:56, height:CARD_IMG_SIZE, borderLeft:'1px solid var(--border)',
                         display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'space-between', padding:'8px 6px', boxSizing:'border-box'
@@ -886,7 +964,6 @@ export default function Home() {
                       checked={checked}
                       onChange={(e)=> {
                         setSelectedFavIds(prev => {
-                          // eslint-disable-next-line @typescript-eslint/no-unused-expressions
                           const n = new Set(prev); e.target.checked ? n.add(f.id) : n.delete(f.id); return n;
                         });
                       }}
