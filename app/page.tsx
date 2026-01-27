@@ -3,7 +3,13 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { motion, useMotionValue, useTransform, AnimatePresence } from 'framer-motion';
+import {
+  motion,
+  useMotionValue,
+  useTransform,
+  AnimatePresence,
+  PanInfo
+} from 'framer-motion';
 
 /** ------------ 型 ------------ */
 type PlaceCard = {
@@ -12,8 +18,8 @@ type PlaceCard = {
   image: string;          // /api/photo?ref=...
   openNow: boolean | null;
   photosCount: number;
-  photoRefs: string[];    // 画像切替用
-  currentIdx?: number;    // 今表示中の photoRefs インデックス
+  photoRefs: string[];
+  currentIdx?: number;
   address?: string | null;
   types: string[];
   lat: number | null;
@@ -27,7 +33,7 @@ type PlaceDetails = {
   mapUrl: string | null;
   phone: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  openingHours: any | null; // { open_now, periods, weekday_text }
+  openingHours: any | null;
   types: string[];
   rating: number | null;
   userRatingsTotal: number;
@@ -44,7 +50,7 @@ const SWIPE_THRESHOLD = 120;
 const VISIBLE_STACK = 3;
 const CARD_IMG_SIZE = 96;
 
-/** ------------ 画像URLヘルパー（再発防止） ------------ */
+/** ------------ ヘルパ ------------ */
 const photoUrl = (ref: string, max = 1200) =>
   `/api/photo?${new URLSearchParams({ ref, maxwidth: String(max) }).toString()}`;
 
@@ -58,19 +64,26 @@ const getRefFromImageUrl = (u: string) => {
   }
 };
 
-/** ------------ 永続化 ------------ */
+/** ------------ Hydration-safe hooks ------------ */
+function useMounted() {
+  const [mounted, setMounted] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => setMounted(true), []);
+  return mounted;
+}
+
+/** 初回は initial、マウント後に localStorage を反映（Hydration 安全化） */
 function usePersistentArray<T>(key: string, initial: T[]) {
-  const [value, setValue] = useState<T[]>(() => {
-    if (typeof window === 'undefined') return initial;
+  const [value, setValue] = useState<T[]>(initial);
+  useEffect(() => {
     try {
       const raw = localStorage.getItem(key);
-      return raw ? (JSON.parse(raw) as T[]) : initial;
-    } catch { return initial; }
-  });
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (raw) setValue(JSON.parse(raw) as T[]);
+    } catch {}
+  }, [key]);
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-    }
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
   }, [key, value]);
   return [value, setValue] as const;
 }
@@ -89,12 +102,12 @@ function formatDistance(m: number | null | undefined) {
   return `${(m/1000).toFixed(1)}km`;
 }
 
-/** ------------ 画像アニメ（フェード／スライド） ------------ */
+/** ------------ 画像アニメ ------------ */
 function AnimatedImage({
   src,
   alt,
   onClick,
-  variant = 'slide', // 'fade' | 'slide'
+  variant = 'slide',
   style,
   className,
 }: {
@@ -105,19 +118,21 @@ function AnimatedImage({
   style?: React.CSSProperties;
   className?: string;
 }) {
-  const [keySrc, setKeySrc] = useState(src);
-  useEffect(() => { setKeySrc(src); }, [src]);
-
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <AnimatePresence initial={false} mode="popLayout">
         <motion.img
-          key={keySrc}
-          src={keySrc}
+          key={src}
+          src={src}
           alt={alt}
           onClick={onClick}
           className={className}
-          style={{ ...style, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block', cursor: onClick ? 'pointer' : 'default' }}
+          style={{
+            ...style,
+            position: 'absolute', inset: 0, width: '100%', height: '100%',
+            objectFit: 'cover', display: 'block',
+            cursor: onClick ? 'pointer' : 'default'
+          }}
           initial={variant === 'fade' ? { opacity: 0 } : { x: 40, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           exit={variant === 'fade' ? { opacity: 0 } : { x: -40, opacity: 0 }}
@@ -168,10 +183,19 @@ function DetailsModal({
       display:'flex', alignItems:'center', justifyContent:'center', zIndex:4000
     }} onClick={onClose}>
       <div
-        style={{ width:'min(92vw, 520px)', maxHeight:'90vh', overflow:'auto', background:'var(--card)', color:'var(--text)', borderRadius:12, padding:14, position:'relative', boxShadow:'0 10px 30px var(--elev)' }}
+        style={{
+          width:'min(92vw, 520px)', maxHeight:'90vh', overflow:'auto',
+          background:'var(--card)', color:'var(--text)', borderRadius:12,
+          padding:14, position:'relative', boxShadow:'0 10px 30px var(--elev)'
+        }}
         onClick={(e)=>e.stopPropagation()}
       >
-        <button onClick={onClose} style={{ position:'absolute', top:8, right:10, background:'transparent', border:'none', fontSize:20, color:'var(--text)' }}>×</button>
+        <button
+          onClick={onClose}
+          style={{ position:'absolute', top:8, right:10, background:'transparent', border:'none', fontSize:20, color:'var(--text)' }}
+        >
+          ×
+        </button>
 
         {loading && <div>読み込み中…</div>}
         {!loading && d && (
@@ -233,7 +257,7 @@ function CardDistance({ lat, lng }:{lat:number|null; lng:number|null}) {
   return <div>📏 {formatDistance(dist)}</div>;
 }
 
-/** ------------ 検索側：先頭カード（B+C対応） ------------ */
+/** ------------ 検索側：先頭カード（上=詳細 / 横=LIKE・NOPE） ------------ */
 function SwipeableCard({
   card,
   onSwiped,
@@ -245,7 +269,7 @@ function SwipeableCard({
   card: PlaceCard;
   onSwiped: (dir: 'left' | 'right') => void;
   onSwipeUp: () => void;
-  onTapImage: () => void; // 画像切替
+  onTapImage: () => void;
   eager?: boolean;
 }) {
   const x = useMotionValue(0);
@@ -253,29 +277,50 @@ function SwipeableCard({
   const likeOpacity = useTransform(x, [40, 120], [0, 1]);
   const nopeOpacity = useTransform(x, [-120, -40], [1, 0]);
 
-  // 画像エリア開始の上フリックのみ詳細（強め判定）
-  const startRef = useRef<{x:number; y:number; t:number; inImage:boolean} | null>(null);
-  const ANGLE_RATIO = 1.7;  // |dy| >= |dx|*1.7 で縦意図
-  const MIN_DIST = 100;     // 上方向に100px以上
-  const MIN_VEL = 0.7;      // 速度（px/ms）
+  /** 画像エリア内から開始したか（上フリック許可） */
+  const gestureInImageRef = useRef(false);
 
-  const onTouchStart = (e: React.TouchEvent) => {
-    const t = e.touches[0];
-    const target = e.target as HTMLElement;
-    const inImage = !!target.closest('[data-image-area="true"]');
-    startRef.current = { x: t.clientX, y: t.clientY, t: performance.now(), inImage };
-  };
-  const onTouchEnd = (e: React.TouchEvent) => {
-    if (!startRef.current) return;
-    const end = e.changedTouches[0];
-    const dt = Math.max(1, performance.now() - startRef.current.t);
-    const dx = end.clientX - startRef.current.x;
-    const dy = end.clientY - startRef.current.y;
-    const vy = Math.abs(dy) / dt; // px/ms
-    const verticalIntent = Math.abs(dy) >= Math.abs(dx) * ANGLE_RATIO;
-    const strongUp = dy < -MIN_DIST && vy >= MIN_VEL;
-    if (startRef.current.inImage && verticalIntent && strongUp) onSwipeUp();
-    startRef.current = null;
+  /** 画像エリアの参照（スクロール抑止の保険を付与） */
+  const imgAreaRef = useRef<HTMLDivElement | null>(null);
+
+  /** iOS Safari でのみネイティブ touchmove を passive:false で付与（警告回避） */
+  const [needNativePrevent, setNeedNativePrevent] = useState(false);
+  useEffect(() => {
+    if (typeof navigator === 'undefined') return;
+    const ua = navigator.userAgent;
+    const isIOS = /iP(hone|ad|od)/i.test(ua);
+    const isWebKit = /WebKit/i.test(ua) && !/CriOS|FxiOS|EdgiOS/i.test(ua); // Safari 系
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNeedNativePrevent(isIOS && isWebKit);
+  }, []);
+
+  useEffect(() => {
+    const el = imgAreaRef.current;
+    if (!el || !needNativePrevent) return;
+    const onTouchMoveNative = (ev: TouchEvent) => {
+      // iOS Safari でのみ抑止（passive:false なので警告は出ない）
+      if (ev.cancelable) ev.preventDefault();
+    };
+    el.addEventListener('touchmove', onTouchMoveNative, { passive: false });
+    return () => el.removeEventListener('touchmove', onTouchMoveNative);
+  }, [needNativePrevent]);
+
+  /** Framer で上フリックを判定（offset/velocity ベース） */
+  const onPanEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    const { offset, velocity } = info;
+    const ox = offset.x;
+    const oy = offset.y;
+    const vy = velocity.y;
+
+    const verticalIntent = Math.abs(oy) >= Math.abs(ox) * 1.4; // 誤爆抑制
+    const DIST_UP = -80;   // 上方向は負値（距離閾値）
+    const VEL_UP  = -300;  // 上方向の速度閾値（px/s）
+
+    if (gestureInImageRef.current && verticalIntent && (oy < DIST_UP || vy < VEL_UP)) {
+      onSwipeUp();
+    }
+
+    gestureInImageRef.current = false;
   };
 
   return (
@@ -284,22 +329,22 @@ function SwipeableCard({
         position:'absolute', inset:0, borderRadius:16, overflow:'hidden',
         background:'var(--card)', color:'var(--text)', boxShadow:'0 10px 30px var(--elev)',
         x, rotate,
-        // 縦スクロールはブラウザに任せる（B）
-        touchAction:'pan-y',
+        touchAction:'pan-y', // 画像外は縦スクロール許可
         zIndex:1000
       }}
-      drag="x" dragElastic={0.2} dragConstraints={{ left: 0, right: 0 }}
+      drag="x"
+      dragElastic={0.2}
+      dragConstraints={{ left: 0, right: 0 }}
       onDragEnd={(_, info) => {
         const ox = info.offset.x;
         if (ox > SWIPE_THRESHOLD) onSwiped('right');
         else if (ox < -SWIPE_THRESHOLD) onSwiped('left');
         else x.set(0);
       }}
+      onPanEnd={onPanEnd}
       initial={{ opacity:0, scale:0.95 }}
       animate={{ opacity:1, scale:1 }}
       exit={{ opacity:0, scale:0.95 }}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
     >
       {/* 営業中バッジ */}
       <div style={{
@@ -322,20 +367,29 @@ function SwipeableCard({
         fontWeight:700, opacity:nopeOpacity, pointerEvents:'none', zIndex:5
       }}>NOPE</motion.div>
 
-      {/* 画像エリア（ここでの上フリックのみ詳細） */}
+      {/* 画像エリア（ここだけスクロール抑止） */}
       <div
-        style={{ position:'relative', width:'100%', height:'58%' }}
+        ref={imgAreaRef}
         data-image-area="true"
-        aria-label="写真エリア（上にフリックで詳細、タップで写真切替）"
+        onPointerDownCapture={() => { gestureInImageRef.current = true; }}  // 画像内開始を記録
+        style={{
+          position:'relative',
+          width:'100%',
+          height:'58%',
+          touchAction:'none',                           // ← スクロール/ズーム/パン無効（この領域のみ）
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          overscrollBehavior: 'contain' as any,         // ← 親へのオーバースクロール伝播抑止
+          pointerEvents:'auto'
+        }}
       >
         <AnimatedImage
           src={card.image}
           alt={card.name}
-          onClick={onTapImage}      // C: タップで写真切替
+          onClick={onTapImage}      // タップで写真切替
           variant="slide"
         />
 
-        {/* C: 「詳細」ピルボタン（左上配置） */}
+        {/* 詳細ボタン */}
         <button
           onClick={onSwipeUp}
           title="詳細を開く"
@@ -349,7 +403,7 @@ function SwipeableCard({
           詳細
         </button>
 
-        {/* C: タップヒント（右下の薄いピル） */}
+        {/* タップヒント */}
         <div
           aria-hidden="true"
           className="tap-hint"
@@ -363,7 +417,7 @@ function SwipeableCard({
           タップで写真切替
         </div>
 
-        {/* C: 下部ハンドル（↑ 詳細の視覚ヒント） → 薄く */}
+        {/* 下部ハンドル（↑ 詳細） */}
         <div
           aria-hidden="true"
           style={{
@@ -380,7 +434,7 @@ function SwipeableCard({
         </div>
       </div>
 
-      {/* 店名＋住所/時間/距離（ここはスクロール優先） */}
+      {/* 店名＋住所/時間/距離 */}
       <div style={{ padding:14 }}>
         <h2 style={{ margin:'0 0 6px', fontSize:18 }}>{card.name}</h2>
         <div style={{ color:'var(--text-muted)', fontSize:13, lineHeight:1.5 }}>
@@ -393,16 +447,21 @@ function SwipeableCard({
   );
 }
 
-/** ------------ ページ本体（タブバーなし） ------------ */
+/** ------------ ページ本体 ------------ */
 export default function Home() {
-  // テーマ切替
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [theme, setTheme] = useState<'light'|'dark'>(() => (typeof window !== 'undefined' && (localStorage.getItem('theme') as any)) || 'light');
+  const mounted = useMounted();
+
+  /** テーマ（初回は 'light' 固定 → マウント後復元） */
+  const [theme, setTheme] = useState<'light'|'dark'>('light');
   useEffect(() => {
-    if (typeof document !== 'undefined') {
-      document.documentElement.setAttribute('data-theme', theme);
-      localStorage.setItem('theme', theme);
-    }
+    try {
+      const stored = localStorage.getItem('theme');
+      if (stored === 'dark' || stored === 'light') setTheme(stored as 'light'|'dark');
+    } catch {}
+  }, []);
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('theme', theme); } catch {}
   }, [theme]);
 
   // 検索
@@ -414,7 +473,7 @@ export default function Home() {
   const [deck, setDeck] = useState<PlaceCard[]>([]);
   const [favorites, setFavorites] = usePersistentArray<Favorite>('favorites_v8', []);
 
-  // お気に入りフィルタ（タグ複数＋キーワード）
+  // お気に入りフィルタ
   const [favFilterText, setFavFilterText] = useState('');
   const [favFilterTags, setFavFilterTags] = useState<Set<string>>(new Set());
 
@@ -425,18 +484,18 @@ export default function Home() {
   // タグ（グローバル）
   const [userTags, setUserTags] = usePersistentArray<string>('user_tags_global', ['カフェ', '居酒屋', 'バー']);
 
-  // 詳細の写真キャッシュ（画像補完）
+  // 詳細の写真キャッシュ
   const detailsPhotosCacheRef = useRef<Record<string, string[]>>({});
 
-  // お気に入りタブ：一覧 or タグ追加
+  // お気に入りタブ
   type FavTab = 'list' | 'tag-add';
   const [favTab, setFavTab] = useState<FavTab>('list');
 
-  // タグ追加タブ：選択状態 & 入力欄（上部に配置・小型）
+  // タグ追加タブ用
   const [selectedFavIds, setSelectedFavIds] = useState<Set<string>>(new Set());
   const [tagInput, setTagInput] = useState('');
 
-  // 一覧タブ：ヘッダー右「タグを追加」→ 検索バー下に小さな追加バーを出す
+  // 一覧タブ：ヘッダー右「タグを追加」
   const [showGlobalAddBar, setShowGlobalAddBar] = useState(false);
   const [globalTagInput, setGlobalTagInput] = useState('');
 
@@ -494,6 +553,7 @@ export default function Home() {
       { enableHighAccuracy:false, timeout:5000 }
     );
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { tryGeolocateAndSearch(); }, []); // 初回のみ
 
   /** 画像切替（不足時は Details から補完） */
@@ -539,7 +599,7 @@ export default function Home() {
     setSelectedFavIds(prev => { const n = new Set(prev); n.delete(id); return n; });
   }
 
-  /** 一覧：各カードの＋タグ → プロンプト（高さを増やさない） */
+  /** 一覧：各カードの＋タグ → プロンプト */
   function addSingleTagByPrompt(f: Favorite) {
     const candidates = Array.from(new Set([...userTags, ...favorites.flatMap(x => x.tags || [])]));
     const input = prompt(`追加するタグ名（既存: ${candidates.join(' / ') || 'なし'}）`, '');
@@ -562,7 +622,7 @@ export default function Home() {
     });
   }, [favorites, favFilterText, favFilterTags]);
 
-  /** タグ追加タブ：まとめて付与（上の小型バー） */
+  /** まとめてタグ付け（上の小型バー） */
   const existingAllTags = useMemo(
     () => Array.from(new Set([...userTags, ...favorites.flatMap(f => f.tags || [])])),
     [userTags, favorites]
@@ -579,7 +639,6 @@ export default function Home() {
     setSelectedFavIds(new Set());
   }
 
-  /** 一覧タブ：ヘッダー右「タグを追加」→ 検索バー下の小型バー */
   function applyGlobalTag() {
     const t = globalTagInput.trim();
     if (!t) return;
@@ -617,7 +676,6 @@ export default function Home() {
     body { background: var(--bg); color: var(--text); }
     input, button { color: inherit; }
 
-    /* 2秒後に2秒かけてフェードアウト（1回） */
     .tap-hint { animation: hintFade 2s ease 2s forwards; }
     @keyframes hintFade { to { opacity: 0; visibility: hidden; } }
   `;
@@ -640,7 +698,9 @@ export default function Home() {
           border:'1px solid var(--border)', background:'var(--card)', color:'var(--text)'
         }}
       >
-        {theme === 'light' ? '🌙' : '🌞'}
+        <span suppressHydrationWarning>
+          {mounted ? (theme === 'light' ? '🌙' : '🌞') : '🌙'}
+        </span>
       </button>
 
       {/* タイトル：Swipick */}
@@ -669,9 +729,12 @@ export default function Home() {
 
       {/* スワイプスタック */}
       <div style={{ position:'relative', width:360, maxWidth:'90vw', height:540 }}>
-        {/* ローディングスケルトン */}
         {loading && (
-          <div style={{ position:'absolute', inset:0, borderRadius:16, overflow:'hidden', background:'var(--card)', boxShadow:'0 10px 30px var(--elev)', display:'flex', flexDirection:'column' }}>
+          <div style={{
+            position:'absolute', inset:0, borderRadius:16, overflow:'hidden',
+            background:'var(--card)', boxShadow:'0 10px 30px var(--elev)',
+            display:'flex', flexDirection:'column'
+          }}>
             <div className="skeleton-hero" style={{ height:'58%', background:'var(--chip)' }} />
             <div style={{ padding:14 }}>
               <div className="skeleton-line" style={{ width:'60%', height:18, background:'var(--chip)' }} />
@@ -720,8 +783,11 @@ export default function Home() {
         </AnimatePresence>
 
         {!top && !loading && (
-          <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
-                        color:'var(--text-muted)', background:'var(--card)', borderRadius:16, textAlign:'center', padding:16, boxShadow:'0 10px 30px var(--elev)' }}>
+          <div style={{
+            position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
+            color:'var(--text-muted)', background:'var(--card)', borderRadius:16,
+            textAlign:'center', padding:16, boxShadow:'0 10px 30px var(--elev)'
+          }}>
             写真のある検索結果は以上です。条件を変えて再検索してください。
           </div>
         )}
@@ -752,11 +818,12 @@ export default function Home() {
 
         {favTab === 'list' ? (
           <>
-            {/* 見出し（件数 + 「タグを追加」） */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
               <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                 <h2 style={{ margin:0, fontSize:16, fontWeight:700 }}>お気に入り</h2>
-                <span style={{ color:'var(--text-muted)', fontSize:12 }}>{favorites.length} 件</span>
+                <span style={{ color:'var(--text-muted)', fontSize:12 }} suppressHydrationWarning>
+                  {mounted ? `${favorites.length} 件` : '0 件'}
+                </span>
               </div>
               <button
                 onClick={() => setShowGlobalAddBar(s => !s)}
@@ -766,7 +833,7 @@ export default function Home() {
               </button>
             </div>
 
-            {/* お気に入り検索バー */}
+            {/* 検索バー */}
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
               <input
                 value={favFilterText}
@@ -810,6 +877,7 @@ export default function Home() {
                 return (
                   <button
                     key={t}
+                    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
                     onClick={() => setFavFilterTags(prev => { const n = new Set(prev); active ? n.delete(t) : n.add(t); return n; })}
                     style={{
                       padding:'4px 10px', borderRadius:999,
@@ -830,7 +898,7 @@ export default function Home() {
               )}
             </div>
 
-            {/* 一覧（横：画像 / 中央：テキスト / 右：＋タグ・🗑 ） */}
+            {/* 一覧 */}
             <div style={{ display:'grid', gap:10 }}>
               {filteredFavorites.length === 0 ? (
                 <div style={{ padding:12, borderRadius:8, background:'var(--card)', color:'var(--text-muted)', fontSize:14, boxShadow:'0 10px 30px var(--elev)' }}>
@@ -964,6 +1032,7 @@ export default function Home() {
                       checked={checked}
                       onChange={(e)=> {
                         setSelectedFavIds(prev => {
+                          // eslint-disable-next-line @typescript-eslint/no-unused-expressions
                           const n = new Set(prev); e.target.checked ? n.add(f.id) : n.delete(f.id); return n;
                         });
                       }}
