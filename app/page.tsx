@@ -1273,8 +1273,8 @@ export default function Home() {
       <div
         style={{
           position: 'relative', zIndex: 60, alignSelf: 'stretch', flexShrink: 0, margin: '0 -16px',
-          padding: 'max(12px, env(safe-area-inset-top)) 16px 10px', background: 'var(--bg)',
-          borderBottom: '1px solid var(--border)', boxShadow: '0 4px 10px var(--elev)',
+          padding: 'max(12px, env(safe-area-inset-top)) 16px 12px', background: 'var(--card)',
+          borderRadius: '0 0 22px 22px', boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
         }}
       >
@@ -1549,7 +1549,8 @@ export default function Home() {
         aria-label="メインメニュー"
         style={{
           position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 3000,
-          background: 'var(--card)', borderTop: '1px solid var(--border)',
+          background: 'var(--card)', borderRadius: '22px 22px 0 0',
+          boxShadow: '0 -3px 14px rgba(0,0,0,0.08)',
           paddingBottom: 'calc(env(safe-area-inset-bottom) * 0.4)',
         }}
       >
@@ -1573,15 +1574,28 @@ export default function Home() {
                   fontSize: 12, fontWeight: active ? 700 : 500,
                 }}
               >
-                <span
-                  style={{
-                    width: 56, height: 28, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: active ? 'var(--accent-bg)' : 'transparent',
-                  }}
-                >
-                  <Icon name={icon} size={22} />
+                {/* 選んでいるタブは、丸いボタンがぽこっと浮き上がる */}
+                <span style={{ width: 40, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', zIndex: 1 }}>
+                  <motion.span
+                    initial={false}
+                    animate={{ y: active ? -12 : 0, scale: active ? 1 : 0.92 }}
+                    transition={{ type: 'spring', stiffness: 520, damping: 26 }}
+                    style={{
+                      width: 42, height: 42, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flex: '0 0 auto',
+                      background: active ? 'var(--accent)' : 'transparent',
+                      color: active ? '#fff' : 'inherit',
+                      boxShadow: active ? '0 6px 14px color-mix(in srgb, var(--accent) 45%, transparent)' : 'none',
+                      border: active ? '4px solid var(--card)' : '4px solid transparent',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <Icon name={icon} size={22} />
+                  </motion.span>
                 </span>
-                {label}
+                <motion.span animate={{ y: active ? -4 : 0 }} transition={{ type: 'spring', stiffness: 520, damping: 26 }}>
+                  {label}
+                </motion.span>
               </button>
             );
           })}
