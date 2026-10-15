@@ -337,7 +337,7 @@ function PlaceRow({
             <Icon name="label" size={18} />
             タグ
           </button>
-          <button onClick={onDelete} style={pillBase} aria-label={`${f.name} を削除`}>
+          <button onClick={onDelete} style={{ ...pillBase, marginLeft: 'auto' }} aria-label={`${f.name} を削除`}>
             <Icon name="delete" size={18} />
             削除
           </button>
@@ -391,7 +391,7 @@ export default function SavedView(props: SavedViewProps) {
     setSelectMode(false);
     setSelected(new Set());
     setCreating(false);
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+    if (typeof document !== 'undefined') document.getElementById('tab-scroller')?.scrollTo({ top: 0 });
   }
 
   const rows = useMemo(() => {
