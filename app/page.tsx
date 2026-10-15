@@ -460,7 +460,7 @@ function DetailsModal({
 }
 
 /** スタンプの文字サイズ（長い文言は小さくして枠からはみ出さないように） */
-const stampSize = (t: string) => (t.length <= 4 ? 36 : t.length <= 6 ? 30 : t.length <= 8 ? 24 : 20);
+const stampSize = (t: string) => (t.length <= 4 ? 58 : t.length <= 6 ? 46 : t.length <= 8 ? 36 : 28);
 
 /** ------------ 先頭カード（上=詳細 / 横=LIKE・NOPE） ------------ */
 const cardVariants: Variants = {
@@ -493,12 +493,13 @@ function SwipeableCard({
 }) {
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-200, 0, 200], [-10, 0, 10]);
-  const likeOpacity = useTransform(x, [30, 110], [0, 1]);
-  const nopeOpacity = useTransform(x, [-110, -30], [1, 0]);
-  const likeScale = useTransform(x, [30, 150], [0.6, 1.1]);
-  const nopeScale = useTransform(x, [-150, -30], [1.1, 0.6]);
-  const likeTint = useTransform(x, [20, 140], [0, 1]);
-  const nopeTint = useTransform(x, [-140, -20], [1, 0]);
+  // ほんの少し動かしただけで出る（早め）
+  const likeOpacity = useTransform(x, [6, 50], [0, 1]);
+  const nopeOpacity = useTransform(x, [-50, -6], [1, 0]);
+  const likeScale = useTransform(x, [6, 100], [0.7, 1.15]);
+  const nopeScale = useTransform(x, [-100, -6], [1.15, 0.7]);
+  const likeTint = useTransform(x, [4, 70], [0, 1]);
+  const nopeTint = useTransform(x, [-70, -4], [1, 0]);
 
   /** 画像エリア内から開始したか（上フリック許可） */
   const gestureInImageRef = useRef(false);
@@ -574,17 +575,17 @@ function SwipeableCard({
         background: 'linear-gradient(225deg, rgba(239,68,68,0.55), rgba(239,68,68,0) 65%)', opacity: nopeTint,
       }} />
       <motion.div style={{
-        position: 'absolute', top: 34, left: 18, padding: '4px 14px', borderRadius: 12,
-        border: '6px solid #10b981', color: '#10b981', background: 'rgba(255,255,255,0.12)',
-        fontWeight: 900, fontSize: stampSize(likeText), letterSpacing: 2, lineHeight: 1.1, whiteSpace: 'nowrap',
+        position: 'absolute', top: 30, left: 14, padding: '2px 16px', borderRadius: 16,
+        border: '8px solid #10b981', color: '#10b981', background: 'rgba(255,255,255,0.12)',
+        fontWeight: 900, fontSize: stampSize(likeText), letterSpacing: 3, lineHeight: 1.15, whiteSpace: 'nowrap',
         textShadow: '0 2px 0 rgba(255,255,255,0.7), 0 0 12px rgba(16,185,129,0.6)',
         boxShadow: '0 0 0 2px rgba(255,255,255,0.8), 0 6px 18px rgba(16,185,129,0.45)',
         opacity: likeOpacity, scale: likeScale, pointerEvents: 'none', zIndex: 7, rotate: -16,
       }}>{likeText}</motion.div>
       <motion.div style={{
-        position: 'absolute', top: 34, right: 18, padding: '4px 14px', borderRadius: 12,
-        border: '6px solid #ef4444', color: '#ef4444', background: 'rgba(255,255,255,0.12)',
-        fontWeight: 900, fontSize: stampSize(nopeText), letterSpacing: 2, lineHeight: 1.1, whiteSpace: 'nowrap',
+        position: 'absolute', top: 30, right: 14, padding: '2px 16px', borderRadius: 16,
+        border: '8px solid #ef4444', color: '#ef4444', background: 'rgba(255,255,255,0.12)',
+        fontWeight: 900, fontSize: stampSize(nopeText), letterSpacing: 3, lineHeight: 1.15, whiteSpace: 'nowrap',
         textShadow: '0 2px 0 rgba(255,255,255,0.7), 0 0 12px rgba(239,68,68,0.6)',
         boxShadow: '0 0 0 2px rgba(255,255,255,0.8), 0 6px 18px rgba(239,68,68,0.45)',
         opacity: nopeOpacity, scale: nopeScale, pointerEvents: 'none', zIndex: 7, rotate: 16,
