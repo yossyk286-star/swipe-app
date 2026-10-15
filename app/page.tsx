@@ -49,8 +49,12 @@ const MAX_SEEN = 1000;        // 見送り履歴の上限
 const MAX_SHARE = 40;         // 共有リンクに含める上限（URLが長くなりすぎないように）
 
 
-type Filters = { openNow: boolean; minRating: number; price: 0 | 1 | 2 | 3; maxDist: number };
-const DEFAULT_FILTERS: Filters = { openNow: false, minRating: 0, price: 0, maxDist: 0 };
+// price は旧バージョンの保存データとの互換用（いまは budget を使う）
+type Filters = { openNow: boolean; minRating: number; price: 0 | 1 | 2 | 3; maxDist: number; budget: number; keyword: string };
+const DEFAULT_FILTERS: Filters = { openNow: false, minRating: 0, price: 0, maxDist: 0, budget: 0, keyword: '' };
+
+/** 価格帯（Googleの4段階）ごとの、おおよその下限金額。予算の絞り込みに使う */
+const PRICE_LOWER = [0, 0, 1000, 3000, 6000];
 
 type SwipeDir = 'left' | 'right';
 type HistoryEntry = { card: PlaceCard; dir: SwipeDir; addedFav: boolean };
@@ -100,12 +104,16 @@ async function fetchPlaces(params: URLSearchParams, signal?: AbortSignal) {
 function passesFilters(c: PlaceCard, f: Filters, pos: LatLng | null) {
   if (f.openNow && c.openNow !== true) return false;
   if (f.minRating > 0 && (c.rating ?? 0) < f.minRating) return false;
-  if (f.price) {
+  if (f.budget > 0) {
+    // 予算（円）以内で行けそうなお店。価格の情報がないお店は出さない
     const lv = c.priceLevel;
     if (lv == null) return false;
-    if (f.price === 1 && lv > 1) return false;
-    if (f.price === 2 && lv !== 2) return false;
-    if (f.price === 3 && lv < 3) return false;
+    if (PRICE_LOWER[Math.min(4, Math.max(0, lv))] > f.budget) return false;
+  }
+  const words = (f.keyword ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length > 0) {
+    const hay = [c.name, c.address ?? '', typeLabel(c.types) ?? ''].join(' ').toLowerCase();
+    if (!words.every((w) => hay.includes(w))) return false;
   }
   if (f.maxDist > 0 && pos) {
     const d = distanceTo(pos, c.lat, c.lng);
@@ -115,7 +123,7 @@ function passesFilters(c: PlaceCard, f: Filters, pos: LatLng | null) {
 }
 
 function isFilterActive(f: Filters) {
-  return f.openNow || f.minRating > 0 || f.price !== 0 || f.maxDist > 0;
+  return f.openNow || f.minRating > 0 || f.budget > 0 || (f.keyword ?? '').trim() !== '' || f.maxDist > 0;
 }
 
 /** 初回は initial、マウント後に localStorage を反映。読み込み完了までは書き込まない */
@@ -195,7 +203,7 @@ function AnimatedImage({
 }: {
   src: string;
   alt: string;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent<HTMLImageElement>) => void;
   variant?: 'fade' | 'slide';
 }) {
   if (!src) {
@@ -489,7 +497,7 @@ function SwipeableCard({
   userPos: LatLng | null;
   onSwiped: (dir: SwipeDir) => void;
   onSwipeUp: () => void;
-  onTapImage: () => void;
+  onTapImage: (delta: 1 | -1) => void;
 }) {
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-200, 0, 200], [-10, 0, 10]);
@@ -543,6 +551,7 @@ function SwipeableCard({
     <motion.div
       style={{
         position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
+        display: 'flex', flexDirection: 'column',
         background: 'var(--card)', color: 'var(--text)', boxShadow: '0 10px 30px var(--elev)',
         x, rotate,
         touchAction: 'pan-y',
@@ -597,12 +606,18 @@ function SwipeableCard({
         data-image-area="true"
         onPointerDownCapture={() => { gestureInImageRef.current = true; }}
         style={{
-          position: 'relative', width: '100%', height: '60%',
+          position: 'relative', width: '100%', flex: '1 1 0', minHeight: 0,
           touchAction: 'none',
           overscrollBehavior: 'contain',
         }}
       >
-        <AnimatedImage src={card.image} alt={card.name} onClick={onTapImage} variant="slide" />
+        <AnimatedImage
+          src={card.image}
+          alt={card.name}
+          // 写真の右半分をタップで次、左半分で前（ぐるっと一周）
+          onClick={(e) => onTapImage(e.nativeEvent.offsetX < e.currentTarget.offsetWidth / 2 ? -1 : 1)}
+          variant="slide"
+        />
 
         {/* 写真の枚数インジケータ */}
         {total > 1 && (
@@ -645,12 +660,12 @@ function SwipeableCard({
           background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: 12,
           pointerEvents: 'none', userSelect: 'none',
         }}>
-          タップで写真切替 / ↑で詳細
+          左右タップで写真切替
         </div>
       </div>
 
       {/* 店名＋評価・価格・距離＋住所 */}
-      <div style={{ padding: '12px 14px' }}>
+      <div style={{ padding: '12px 14px 14px', flex: '0 0 auto' }}>
         <h2 className="jp-text jp-title" style={{ margin: '0 0 6px', fontSize: 19, lineHeight: 1.3 }}>{card.name}</h2>
         <div style={{ fontSize: 14, marginBottom: 6 }}>
           <MetaLine c={card} pos={userPos} />
@@ -889,7 +904,7 @@ export default function Home() {
   }, [shownDeck.length, nextToken, loading]);
 
   /** 画像切替（不足時は Details から補完） */
-  async function nextPhotoWithFetch(placeId: string) {
+  async function nextPhotoWithFetch(placeId: string, delta: 1 | -1 = 1) {
     const card = deck.find((c) => c.id === placeId);
     if (!card) return;
 
@@ -910,7 +925,7 @@ export default function Home() {
     setDeck((prev) => prev.map((c) => {
       if (c.id !== placeId) return c;
       const total = c.photoRefs?.length || 1;
-      const next = ((c.currentIdx ?? 0) + 1) % total;
+      const next = ((c.currentIdx ?? 0) + delta + total) % total;
       const ref = c.photoRefs[next] ?? getRefFromImageUrl(c.image);
       return { ...c, currentIdx: next, image: photoUrl(ref) };
     }));
@@ -1274,7 +1289,7 @@ export default function Home() {
       {/* 検索・絞り込み（スクロールしても上に残す） */}
       <div
         style={{
-          position: 'relative', zIndex: 60, alignSelf: 'stretch', flexShrink: 0, margin: '0 -16px',
+          position: 'relative', zIndex: 1500, alignSelf: 'stretch', flexShrink: 0, margin: '0 -16px',
           padding: 'max(12px, env(safe-area-inset-top)) 16px 12px', background: 'var(--card)',
           borderRadius: '0 0 22px 22px', boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
@@ -1330,13 +1345,18 @@ export default function Home() {
               </select>
             </label>
             <label style={{ display: 'grid', gap: 4 }}>
-              <span style={{ color: 'var(--text-muted)' }}>価格</span>
-              <select value={filters.price} onChange={(e) => setFilter('price', Number(e.target.value) as Filters['price'])} style={selectStyle}>
-                <option value={0}>指定なし</option>
-                <option value={1}>〜1,000円</option>
-                <option value={2}>1,000〜3,000円</option>
-                <option value={3}>3,000円〜</option>
-              </select>
+              <span style={{ color: 'var(--text-muted)' }}>予算の上限（円）</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="例：3000"
+                value={filters.budget > 0 ? String(filters.budget) : ''}
+                onChange={(e) => {
+                  const half = e.target.value.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+                  setFilter('budget', Number(half.replace(/[^0-9]/g, '').slice(0, 6)) || 0);
+                }}
+                style={{ ...selectStyle, boxSizing: 'border-box' }}
+              />
             </label>
             <label style={{ display: 'grid', gap: 4 }}>
               <span style={{ color: 'var(--text-muted)' }}>距離</span>
@@ -1347,8 +1367,18 @@ export default function Home() {
                 <option value={3000}>3km以内</option>
               </select>
             </label>
+            <label style={{ gridColumn: '1 / -1', display: 'grid', gap: 4 }}>
+              <span style={{ color: 'var(--text-muted)' }}>キーワード（店名・住所・ジャンル。スペースで複数）</span>
+              <input
+                type="text"
+                placeholder="例：個室 北新地"
+                value={filters.keyword}
+                onChange={(e) => setFilter('keyword', e.target.value)}
+                style={{ ...selectStyle, boxSizing: 'border-box' }}
+              />
+            </label>
             <div style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              ※ 価格・評価の情報がないお店は、その条件を指定すると表示されません。
+              ※ 予算は、Googleの価格帯から割り出した目安です。価格・評価の情報がないお店は、その条件を指定すると表示されません。
               {filters.maxDist > 0 && !userPos && ' 距離の絞り込みには位置情報の許可が必要です。'}
             </div>
           </div>
@@ -1416,7 +1446,7 @@ export default function Home() {
               key={top.id}
               card={top}
               userPos={userPos}
-              onTapImage={() => nextPhotoWithFetch(top.id)}
+              onTapImage={(delta) => nextPhotoWithFetch(top.id, delta)}
               onSwipeUp={() => openDetails(top.id, top.name)}
               onSwiped={(dir) => handleSwipe(top, dir)}
               likeText={prefs.likeText.trim() || DEFAULT_PREFS.likeText}
