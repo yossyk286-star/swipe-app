@@ -43,7 +43,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ja">
+    <html lang="ja" suppressHydrationWarning>
+      <head>
+        {/* 保存済みのテーマ設定を、画面が描かれる前に反映（ちらつき防止） */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=(localStorage.getItem('theme')||'').replace(/\"/g,'');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}",
+          }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

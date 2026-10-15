@@ -6,7 +6,7 @@
 //   ① タグの一覧（あなたのタグ）  ② タグを開いた中身（お店の一覧）
 // タグは Google マップの「リスト」に当たる。
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Favorite,
   LatLng,
@@ -349,7 +349,6 @@ export type SavedViewProps = {
   allTags: string[];
   tagCounts: Record<string, number>;
   userPos: LatLng | null;
-  seenCount: number;
   onOpenDetails: (id: string, name?: string) => void;
   onEditTags: (ids: string[]) => void;
   onDelete: (id: string) => void;
@@ -357,17 +356,14 @@ export type SavedViewProps = {
   onShowOnMap: (tag: string | null) => void;
   onCreateTag: (name: string) => void;
   onManageTags: () => void;
-  onExport: () => void;
-  onImport: (file: File) => void;
-  onResetSeen: () => void;
   onGoSearch: () => void;
 };
 
 export default function SavedView(props: SavedViewProps) {
   const {
-    favorites, allTags, tagCounts, userPos, seenCount,
+    favorites, allTags, tagCounts, userPos,
     onOpenDetails, onEditTags, onDelete, onShare, onShowOnMap, onCreateTag, onManageTags,
-    onExport, onImport, onResetSeen, onGoSearch,
+    onGoSearch,
   } = props;
 
   const [openList, setOpenList] = useState<string | null>(null);
@@ -378,7 +374,6 @@ export default function SavedView(props: SavedViewProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
-  const importRef = useRef<HTMLInputElement | null>(null);
 
   // 開いているタグが削除・名前変更で無くなったら一覧に戻す
   const openTag = openList !== null && openList !== ALL_LIST && !allTags.includes(openList) ? null : openList;
@@ -652,45 +647,6 @@ export default function SavedView(props: SavedViewProps) {
           ) : (
             <ListRow icon="plus" color="" tonal title="新しいタグを作成" onClick={() => setCreating(true)} />
           )}
-        </section>
-      )}
-
-      {/* バックアップ */}
-      {!searching && (
-        <section
-          style={{
-            marginTop: 28, padding: 14, borderRadius: 14, boxSizing: 'border-box',
-            background: 'var(--card)', boxShadow: '0 1px 4px var(--elev)', fontSize: 13,
-          }}
-        >
-          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>データのバックアップ</div>
-          <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6, marginBottom: 12 }}>
-            お気に入りとタグは、この端末のブラウザ内だけに保存されています。機種変更やブラウザのデータ削除の前に書き出しておくと、別の端末で読み込めます。
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={onExport} disabled={favorites.length === 0} style={{ ...pillBase, opacity: favorites.length === 0 ? 0.5 : 1 }}>
-              ⬇️ 書き出す
-            </button>
-            <button onClick={() => importRef.current?.click()} style={pillBase}>
-              ⬆️ 読み込む
-            </button>
-            {seenCount > 0 && (
-              <button onClick={onResetSeen} style={pillBase}>
-                見送り履歴（{seenCount}件）をリセット
-              </button>
-            )}
-            <input
-              ref={importRef}
-              type="file"
-              accept="application/json,.json"
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) onImport(file);
-                e.target.value = '';
-              }}
-            />
-          </div>
         </section>
       )}
     </div>

@@ -15,6 +15,7 @@ import { TagSheet, TagManager } from './TagSheets';
 import FavoritesMap, { MapItem } from './components/FavoritesMap';
 import SavedView from './components/SavedView';
 import { Icon, type IconName } from './components/Icons';
+import SettingsView, { ACCENTS, type AccentId, type ThemeMode } from './components/SettingsView';
 import {
   ApiPlace,
   Favorite,
@@ -687,8 +688,36 @@ export default function Home() {
   const closeDetails = useCallback(() => setDetailsOpen(false), []);
 
   // 下タブ（探す / 保存済み / 地図）
-  type MainTab = 'search' | 'saved' | 'map';
+  type MainTab = 'settings' | 'search' | 'saved' | 'map';
   const [tab, setTab] = useState<MainTab>('search');
+  // テーマ・テーマカラー（設定画面）
+  const [themeRaw, setTheme, themeLoaded] = usePersistent<ThemeMode>(STORAGE_KEYS.theme, 'auto');
+  const [accentRaw, setAccent, accentLoaded] = usePersistent<AccentId>(STORAGE_KEYS.accent, 'blue');
+  const theme: ThemeMode = themeRaw === 'light' || themeRaw === 'dark' ? themeRaw : 'auto';
+  const accent: AccentId = ACCENTS.some((a) => a.id === accentRaw) ? accentRaw : 'blue';
+  useEffect(() => {
+    if (!themeLoaded || !accentLoaded) return; // 読み込み前に上書きしない（ちらつき防止）
+    const root = document.documentElement;
+    if (theme === 'auto') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', theme);
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      const a = ACCENTS.find((x) => x.id === accent);
+      if (!a || a.id === 'blue') {
+        root.style.removeProperty('--accent');
+        root.style.removeProperty('--accent-bg');
+        return;
+      }
+      const dark = theme === 'dark' || (theme === 'auto' && mq.matches);
+      const c = dark ? a.dark : a.light;
+      root.style.setProperty('--accent', c);
+      root.style.setProperty('--accent-bg', `color-mix(in srgb, ${c} ${dark ? 18 : 14}%, transparent)`);
+    };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [theme, accent, themeLoaded, accentLoaded]);
+
   const [mapTag, setMapTag] = useState<string | null>(null);
   const [mapQuery, setMapQuery] = useState('');
 
@@ -1175,11 +1204,19 @@ export default function Home() {
       <div
         style={{
           display: tab === 'search' ? 'flex' : 'none',
-          flexDirection: 'column', alignItems: 'center', gap: 10,
-          padding: 'max(12px, env(safe-area-inset-top)) 16px 8px',
+          flexDirection: 'column', alignItems: 'center', gap: 12,
+          padding: '0 16px 24px',
         }}
       >
-      {/* 検索 */}
+      {/* 検索・絞り込み（スクロールしても上に残す） */}
+      <div
+        style={{
+          position: 'sticky', top: 0, zIndex: 60, alignSelf: 'stretch', margin: '0 -16px',
+          padding: 'max(12px, env(safe-area-inset-top)) 16px 10px', background: 'var(--bg)',
+          borderBottom: '1px solid var(--border)', boxShadow: '0 4px 10px var(--elev)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+        }}
+      >
       <form
         onSubmit={(e) => { e.preventDefault(); search(q); }}
         style={{ display: 'flex', gap: 8, width: 360, maxWidth: '100%' }}
@@ -1189,7 +1226,11 @@ export default function Home() {
           onChange={(e) => setQ(e.target.value)}
           enterKeyHint="search"
           placeholder="例：梅田 居酒屋 / なんば カフェ"
-          style={{ flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 16 }}
+          style={{
+            flex: 1, minWidth: 0, padding: '12px 14px', borderRadius: 12, fontSize: 16,
+            border: '2px solid var(--text-muted)', background: 'var(--card)', color: 'var(--text)',
+            boxShadow: '0 2px 8px var(--elev)',
+          }}
         />
         <button type="submit" disabled={loading}
           style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--primary)', color: 'var(--bg)', border: 'none', minWidth: 72, fontWeight: 700 }}>
@@ -1250,6 +1291,8 @@ export default function Home() {
         )}
       </div>
 
+      </div>
+
       {/* エラー */}
       {error && (
         <div role="alert" style={{
@@ -1263,7 +1306,7 @@ export default function Home() {
       )}
 
       {/* スワイプスタック */}
-      <div style={{ position: 'relative', width: 360, maxWidth: '100%', height: 'clamp(340px, calc(100dvh - 320px), 560px)' }}>
+      <div style={{ position: 'relative', width: 360, maxWidth: '100%', height: 540 }}>
         {loading && (
           <div style={{
             position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
@@ -1343,6 +1386,26 @@ export default function Home() {
 
       </div>
 
+      {/* ===== 設定 ===== */}
+      <div
+        style={{
+          display: tab === 'settings' ? 'block' : 'none',
+          maxWidth: 560, margin: '0 auto', padding: '16px 16px 24px', boxSizing: 'border-box',
+        }}
+      >
+        <SettingsView
+          theme={theme}
+          onTheme={setTheme}
+          accent={accent}
+          onAccent={setAccent}
+          favoritesCount={favorites.length}
+          seenCount={seenIds.length}
+          onExport={exportBackup}
+          onImport={importBackup}
+          onResetSeen={resetSeen}
+        />
+      </div>
+
       {/* ===== 保存済み（Googleマップの「保存済み」風） ===== */}
       <div
         style={{
@@ -1355,7 +1418,6 @@ export default function Home() {
           allTags={existingAllTags}
           tagCounts={tagCounts}
           userPos={userPos}
-          seenCount={seenIds.length}
           onOpenDetails={openDetails}
           onEditTags={(ids) => setTagSheetIds(ids)}
           onDelete={deleteFavorite}
@@ -1363,9 +1425,6 @@ export default function Home() {
           onShowOnMap={(tag) => { setMapTag(tag); selectTab('map'); }}
           onCreateTag={createTag}
           onManageTags={() => setTagManagerOpen(true)}
-          onExport={exportBackup}
-          onImport={importBackup}
-          onResetSeen={resetSeen}
           onGoSearch={() => selectTab('search')}
         />
       </div>
@@ -1429,6 +1488,7 @@ export default function Home() {
       >
         <div style={{ maxWidth: 560, margin: '0 auto', height: NAV_HEIGHT, display: 'flex', justifyContent: 'center' }}>
           {([
+            ['settings', '設定', 'settings'],
             ['search', '探す', 'search'],
             ['saved', '保存済み', 'bookmark'],
             ['map', '地図', 'map'],
@@ -1440,7 +1500,7 @@ export default function Home() {
                 onClick={() => selectTab(key)}
                 aria-current={active ? 'page' : undefined}
                 style={{
-                  flex: '0 0 112px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, padding: 0,
+                  flex: '0 0 84px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, padding: 0,
                   background: 'transparent', border: 'none',
                   color: active ? 'var(--accent)' : 'var(--text-muted)',
                   fontSize: 12, fontWeight: active ? 700 : 500,

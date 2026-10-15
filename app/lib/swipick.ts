@@ -288,4 +288,5 @@ export const STORAGE_KEYS = {
   seen: 'seen_ids_v1',
   filters: 'filters_v1',
   theme: 'theme',
+  accent: 'accent_v1',
 } as const;

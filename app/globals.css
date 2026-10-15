@@ -22,7 +22,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #0f1115;
     --text: #e8ecf1;
     --text-muted: #b6bdc7;
@@ -35,6 +35,25 @@
     --accent: #8ab4f8;
     --accent-bg: rgba(138, 180, 248, 0.16);
   }
+}
+
+/* 設定画面で手動指定されたテーマ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+    --bg: #0f1115;
+    --text: #e8ecf1;
+    --text-muted: #b6bdc7;
+    --card: #171a20;
+    --border: #2a2f3a;
+    --primary: #e8ecf1;
+    --chip: #252a34;
+    --elev: rgba(0, 0, 0, 0.42);
+
+    --accent: #8ab4f8;
+    --accent-bg: rgba(138, 180, 248, 0.16);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 @theme inline {
