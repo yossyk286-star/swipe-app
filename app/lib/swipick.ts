@@ -117,8 +117,12 @@ export function formatDistance(m: number | null | undefined) {
 /** ------------ 表示用 ------------ */
 export function priceLabel(level: number | null | undefined) {
   if (level == null) return null;
+  // Google の価格帯は4段階しかないため、おおよその金額（1人あたり）に置き換えて表示する
   if (level === 0) return '無料';
-  return '¥'.repeat(Math.min(4, level));
+  if (level === 1) return '〜1,000円';
+  if (level === 2) return '1,000〜3,000円';
+  if (level === 3) return '3,000〜6,000円';
+  return '6,000円〜';
 }
 
 export function formatCount(n: number | null | undefined) {

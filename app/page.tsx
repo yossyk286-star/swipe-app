@@ -14,7 +14,7 @@ import {
 import { TagSheet, TagManager } from './TagSheets';
 import FavoritesMap, { MapItem } from './components/FavoritesMap';
 import SavedView from './components/SavedView';
-import { Icon } from './components/Icons';
+import { Icon, type IconName } from './components/Icons';
 import {
   ApiPlace,
   Favorite,
@@ -288,29 +288,33 @@ function DetailsModal({
         style={{
           width: 'min(92vw, 520px)', maxHeight: '88vh', overflow: 'auto',
           background: 'var(--card)', color: 'var(--text)', borderRadius: 14,
-          padding: 16, position: 'relative', boxShadow: '0 10px 30px var(--elev)',
+          padding: '60px 18px 18px', position: 'relative', boxShadow: '0 10px 30px var(--elev)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
           aria-label="閉じる"
-          style={{ position: 'absolute', top: 6, right: 8, background: 'transparent', border: 'none', fontSize: 24, color: 'var(--text)', padding: 6 }}
+          style={{
+            position: 'absolute', top: 10, right: 10, width: 44, height: 44, borderRadius: 22,
+            background: 'var(--chip)', border: 'none', color: 'var(--text)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
         >
-          ×
+          <Icon name="close" size={24} />
         </button>
 
         {loading && <div style={{ padding: '24px 0' }}>読み込み中…</div>}
         {!loading && d && (
           <>
-            <h2 style={{ margin: '4px 32px 4px 0', fontSize: 20 }}>{name}</h2>
+            <h2 className="jp-text jp-title" style={{ margin: '-40px 56px 6px 0', fontSize: 20, lineHeight: 1.35, minHeight: 44, display: 'flex', alignItems: 'center' }}>{name}</h2>
             <div className="jp-text" style={{ color: 'var(--text-muted)', fontSize: 13 }}>{shortAddress(d.address)}</div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginTop: 8, fontSize: 14 }}>
               {d.rating != null && (
                 <span><span style={{ color: '#f59e0b' }}>★</span> {d.rating.toFixed(1)}（{formatCount(d.userRatingsTotal)}件）</span>
               )}
-              {price && <span>{price}</span>}
+              {price && <span>目安 {price}</span>}
               {openNow != null && (
                 <span style={{ color: openNow ? '#10b981' : 'var(--text-muted)', fontWeight: 700 }}>
                   {openNow ? '営業中' : '営業時間外'}
@@ -318,25 +322,30 @@ function DetailsModal({
               )}
             </div>
 
-            {/* 行動ボタン */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))', gap: 8, marginTop: 14 }}>
-              <a href={mapsDirectionsUrl(name, placeId)} target="_blank" rel="noreferrer"
-                style={{ ...smallBtn, padding: '10px 8px', fontSize: 13, background: 'var(--primary)', color: 'var(--bg)', border: 'none', fontWeight: 700 }}>
-                🚶 経路
-              </a>
-              <a href={d.mapUrl ?? mapsPlaceUrl(name, placeId)} target="_blank" rel="noreferrer" style={{ ...smallBtn, padding: '10px 8px', fontSize: 13 }}>
-                🗺 地図
-              </a>
-              {d.phone && (
-                <a href={`tel:${d.phone.replace(/[^\d+]/g, '')}`} style={{ ...smallBtn, padding: '10px 8px', fontSize: 13 }}>
-                  📞 電話
+            {/* 行動ボタン（1行・アイコン付き） */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+              {([
+                { key: 'route', label: '経路', icon: 'directions', href: mapsDirectionsUrl(name, placeId), primary: true },
+                { key: 'map', label: '地図', icon: 'map', href: d.mapUrl ?? mapsPlaceUrl(name, placeId) },
+                ...(d.phone ? [{ key: 'tel', label: '電話', icon: 'call', href: `tel:${d.phone.replace(/[^\d+]/g, '')}` }] : []),
+                ...(d.website ? [{ key: 'web', label: 'サイト', icon: 'link', href: d.website }] : []),
+              ] as { key: string; label: string; icon: IconName; href: string; primary?: boolean }[]).map((b) => (
+                <a
+                  key={b.key}
+                  href={b.href}
+                  {...(b.key === 'tel' ? {} : { target: '_blank', rel: 'noreferrer' })}
+                  style={{
+                    flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    gap: 4, padding: '10px 4px', borderRadius: 12, textDecoration: 'none', fontSize: 12, fontWeight: 700,
+                    background: b.primary ? 'var(--accent)' : 'transparent',
+                    color: b.primary ? '#fff' : 'var(--accent)',
+                    border: b.primary ? 'none' : '1px solid var(--border)',
+                  }}
+                >
+                  <Icon name={b.icon} size={22} />
+                  {b.label}
                 </a>
-              )}
-              {d.website && (
-                <a href={d.website} target="_blank" rel="noreferrer" style={{ ...smallBtn, padding: '10px 8px', fontSize: 13 }}>
-                  🔗 公式サイト
-                </a>
-              )}
+              ))}
             </div>
 
             {todayText && (
@@ -1078,13 +1087,10 @@ export default function Home() {
       <div
         style={{
           display: tab === 'search' ? 'flex' : 'none',
-          flexDirection: 'column', alignItems: 'center', gap: 12,
-          padding: '16px 16px 24px',
+          flexDirection: 'column', alignItems: 'center', gap: 10,
+          padding: 'max(12px, env(safe-area-inset-top)) 16px 8px',
         }}
       >
-      {/* ヘッダー */}
-      <h1 style={{ textAlign: 'center', fontSize: 22, fontWeight: 800, margin: 0 }}>Swipick</h1>
-
       {/* 検索 */}
       <form
         onSubmit={(e) => { e.preventDefault(); search(q); }}
@@ -1107,7 +1113,7 @@ export default function Home() {
       <div style={{ width: 360, maxWidth: '100%' }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button onClick={() => setFilterOpen((o) => !o)} style={{ ...chipBase(filterActive), display: 'inline-flex', gap: 6 }}>
-            ⚙ 絞り込み{filterActive ? '（ON）' : ''} {filterOpen ? '▲' : '▼'}
+            絞り込み{filterActive ? '（ON）' : ''} {filterOpen ? '▲' : '▼'}
           </button>
           <button onClick={() => setFilter('openNow', !filters.openNow)} style={chipBase(filters.openNow)}>
             営業中のみ
@@ -1134,9 +1140,9 @@ export default function Home() {
               <span style={{ color: 'var(--text-muted)' }}>価格</span>
               <select value={filters.price} onChange={(e) => setFilter('price', Number(e.target.value) as Filters['price'])} style={selectStyle}>
                 <option value={0}>指定なし</option>
-                <option value={1}>¥（安め）</option>
-                <option value={2}>¥¥（普通）</option>
-                <option value={3}>¥¥¥〜（高め）</option>
+                <option value={1}>〜1,000円</option>
+                <option value={2}>1,000〜3,000円</option>
+                <option value={3}>3,000円〜</option>
               </select>
             </label>
             <label style={{ display: 'grid', gap: 4 }}>
@@ -1169,7 +1175,7 @@ export default function Home() {
       )}
 
       {/* スワイプスタック */}
-      <div style={{ position: 'relative', width: 360, maxWidth: '100%', height: 520 }}>
+      <div style={{ position: 'relative', width: 360, maxWidth: '100%', height: 'clamp(340px, calc(100dvh - 320px), 560px)' }}>
         {loading && (
           <div style={{
             position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
