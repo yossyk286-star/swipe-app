@@ -2,68 +2,116 @@
 
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   motion,
   useMotionValue,
   useTransform,
   AnimatePresence,
-  PanInfo
+  PanInfo,
+  Variants,
 } from 'framer-motion';
 import { TagSheet, TagManager } from './TagSheets';
-
-/** ------------ 型 ------------ */
-type PlaceCard = {
-  id: string;
-  name: string;
-  image: string;          // /api/photo?ref=...
-  openNow: boolean | null;
-  photosCount: number;
-  photoRefs: string[];
-  currentIdx?: number;
-  address?: string | null;
-  types: string[];
-  lat: number | null;
-  lng: number | null;
-};
-
-type PlaceDetails = {
-  name: string | null;
-  address: string | null;
-  website: string | null;
-  mapUrl: string | null;
-  phone: string | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  openingHours: any | null;
-  types: string[];
-  rating: number | null;
-  userRatingsTotal: number;
-  priceLevel: number | null;
-  photoRefs: string[];
-  lat: number | null;
-  lng: number | null;
-};
-
-type Favorite = PlaceCard & { tags: string[] };
+import FavoritesMap, { MapItem } from './components/FavoritesMap';
+import {
+  ApiPlace,
+  Favorite,
+  LatLng,
+  PlaceCard,
+  PlaceDetails,
+  STORAGE_KEYS,
+  distanceTo,
+  encodeShare,
+  formatCount,
+  formatDistance,
+  getRefFromImageUrl,
+  mapsDirectionsUrl,
+  mapsPlaceUrl,
+  photoUrl,
+  priceLabel,
+  searchErrorMessage,
+  toCards,
+} from './lib/swipick';
 
 /** ------------ 定数 ------------ */
 const SWIPE_THRESHOLD = 120;
 const VISIBLE_STACK = 3;
-const CARD_IMG_SIZE = 96;
+const CARD_IMG_SIZE = 88;
+const PREFETCH_WHEN_LEFT = 3; // 残りがこの枚数以下になったら続きを取得
+const MAX_SEEN = 1000;        // 見送り履歴の上限
+const MAX_SHARE = 40;         // 共有リンクに含める上限（URLが長くなりすぎないように）
 
-/** ------------ ヘルパ ------------ */
-const photoUrl = (ref: string, max = 1200) =>
-  `/api/photo?${new URLSearchParams({ ref, maxwidth: String(max) }).toString()}`;
+const GENRES = ['居酒屋', 'カフェ', 'ラーメン', '焼肉', '寿司', 'イタリアン', '中華', 'バー', 'ランチ', 'スイーツ'];
 
-const getRefFromImageUrl = (u: string) => {
-  try {
-    const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
-    const url = new URL(u, base);
-    return url.searchParams.get('ref') ?? '';
-  } catch {
-    return '';
+type Filters = { openNow: boolean; minRating: number; price: 0 | 1 | 2 | 3; maxDist: number };
+const DEFAULT_FILTERS: Filters = { openNow: false, minRating: 0, price: 0, maxDist: 0 };
+
+type SwipeDir = 'left' | 'right';
+type HistoryEntry = { card: PlaceCard; dir: SwipeDir; addedFav: boolean };
+type SearchStats = { query: string; raw: number; withPhoto: number; hidden: number };
+type ErrorInfo = { message: string; detail?: string };
+type SortMode = 'new' | 'rating' | 'near';
+
+/** ------------ 詳細情報のキャッシュ（同じお店の再取得＝課金を避ける） ------------ */
+const detailsCache = new Map<string, PlaceDetails>();
+async function fetchDetails(placeId: string): Promise<PlaceDetails | null> {
+  const hit = detailsCache.get(placeId);
+  if (hit) return hit;
+  const r = await fetch(`/api/details?placeId=${encodeURIComponent(placeId)}`, { cache: 'no-store' });
+  if (!r.ok) return null;
+  const j = (await r.json()) as { details?: PlaceDetails };
+  if (j.details) detailsCache.set(placeId, j.details);
+  return j.details ?? null;
+}
+
+/** ------------ 検索API ------------ */
+class SearchError extends Error {
+  detail?: string;
+  constructor(info: ErrorInfo) {
+    super(info.message);
+    this.detail = info.detail;
   }
-};
+}
+
+async function fetchPlaces(params: URLSearchParams, signal?: AbortSignal) {
+  let res: Response;
+  try {
+    res = await fetch(`/api/places?${params.toString()}`, { cache: 'no-store', signal });
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') throw e;
+    throw new SearchError({ message: '通信に失敗しました。電波状況を確認して、もう一度お試しください。' });
+  }
+  let body: { cards?: ApiPlace[]; nextPageToken?: string | null; error?: string; g_status?: string; g_error?: string } | null = null;
+  try {
+    body = await res.json();
+  } catch {}
+  if (!res.ok || !Array.isArray(body?.cards)) {
+    throw new SearchError(searchErrorMessage(res.status, body));
+  }
+  return { cards: body!.cards as ApiPlace[], nextPageToken: body!.nextPageToken ?? null };
+}
+
+/** ------------ 絞り込み ------------ */
+function passesFilters(c: PlaceCard, f: Filters, pos: LatLng | null) {
+  if (f.openNow && c.openNow !== true) return false;
+  if (f.minRating > 0 && (c.rating ?? 0) < f.minRating) return false;
+  if (f.price) {
+    const lv = c.priceLevel;
+    if (lv == null) return false;
+    if (f.price === 1 && lv > 1) return false;
+    if (f.price === 2 && lv !== 2) return false;
+    if (f.price === 3 && lv < 3) return false;
+  }
+  if (f.maxDist > 0 && pos) {
+    const d = distanceTo(pos, c.lat, c.lng);
+    if (d == null || d > f.maxDist) return false;
+  }
+  return true;
+}
+
+function isFilterActive(f: Filters) {
+  return f.openNow || f.minRating > 0 || f.price !== 0 || f.maxDist > 0;
+}
 
 /** ------------ Hydration-safe hooks ------------ */
 function useMounted() {
@@ -73,34 +121,72 @@ function useMounted() {
   return mounted;
 }
 
-/** 初回は initial、マウント後に localStorage を反映（Hydration 安全化） */
-function usePersistentArray<T>(key: string, initial: T[]) {
-  const [value, setValue] = useState<T[]>(initial);
+/** 初回は initial、マウント後に localStorage を反映。読み込み完了までは書き込まない */
+function usePersistent<T>(key: string, initial: T) {
+  const [value, setValue] = useState<T>(initial);
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     try {
       const raw = localStorage.getItem(key);
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (raw) setValue(JSON.parse(raw) as T[]);
+      if (raw != null) setValue(JSON.parse(raw) as T);
     } catch {}
+    setLoaded(true);
   }, [key]);
   useEffect(() => {
+    if (!loaded) return;
     try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-  }, [key, value]);
-  return [value, setValue] as const;
+  }, [key, value, loaded]);
+  return [value, setValue, loaded] as const;
 }
 
-/** ------------ 距離 ------------ */
-function haversineMeters(a: {lat:number, lng:number}, b:{lat:number, lng:number}) {
-  const R = 6371e3, toRad = (d:number)=> d*Math.PI/180;
-  const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
-  const la1 = toRad(a.lat), la2 = toRad(b.lat);
-  const s = Math.sin(dLat/2)**2 + Math.cos(la1)*Math.cos(la2)*Math.sin(dLng/2)**2;
-  return 2*R*Math.asin(Math.sqrt(s));
-}
-function formatDistance(m: number | null | undefined) {
-  if (m == null) return '-';
-  if (m < 1000) return `${Math.round(m)}m`;
-  return `${(m/1000).toFixed(1)}km`;
+/** ------------ 共通の小さな部品 ------------ */
+const chipBase = (active: boolean): React.CSSProperties => ({
+  flex: '0 0 auto',
+  padding: '6px 12px',
+  borderRadius: 999,
+  whiteSpace: 'nowrap',
+  border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
+  background: active ? 'var(--primary)' : 'var(--card)',
+  color: active ? 'var(--bg)' : 'var(--text)',
+  fontSize: 13,
+  fontWeight: 700,
+});
+
+const smallBtn: React.CSSProperties = {
+  padding: '6px 10px',
+  borderRadius: 8,
+  border: '1px solid var(--border)',
+  background: 'var(--card)',
+  color: 'var(--text)',
+  fontSize: 12,
+  textDecoration: 'none',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 4,
+};
+
+function MetaLine({ c, pos }: { c: PlaceCard; pos: LatLng | null }) {
+  const parts: React.ReactNode[] = [];
+  if (c.rating != null) {
+    parts.push(
+      <span key="r">
+        <span style={{ color: '#f59e0b' }}>★</span> {c.rating.toFixed(1)}
+        <span style={{ opacity: 0.7 }}>（{formatCount(c.userRatingsTotal)}件）</span>
+      </span>
+    );
+  }
+  const price = priceLabel(c.priceLevel);
+  if (price) parts.push(<span key="p">{price}</span>);
+  const dist = formatDistance(distanceTo(pos, c.lat, c.lng));
+  if (dist) parts.push(<span key="d">📏 {dist}</span>);
+  if (parts.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 10px', alignItems: 'center' }}>
+      {parts}
+    </div>
+  );
 }
 
 /** ------------ 画像アニメ ------------ */
@@ -109,16 +195,25 @@ function AnimatedImage({
   alt,
   onClick,
   variant = 'slide',
-  style,
-  className,
 }: {
   src: string;
   alt: string;
   onClick?: () => void;
   variant?: 'fade' | 'slide';
-  style?: React.CSSProperties;
-  className?: string;
 }) {
+  if (!src) {
+    return (
+      <div
+        onClick={onClick}
+        style={{
+          width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'var(--chip)', color: 'var(--text-muted)', fontSize: 24,
+        }}
+      >
+        🍽
+      </div>
+    );
+  }
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <AnimatePresence initial={false} mode="popLayout">
@@ -127,12 +222,11 @@ function AnimatedImage({
           src={src}
           alt={alt}
           onClick={onClick}
-          className={className}
+          draggable={false}
           style={{
-            ...style,
             position: 'absolute', inset: 0, width: '100%', height: '100%',
             objectFit: 'cover', display: 'block',
-            cursor: onClick ? 'pointer' : 'default'
+            cursor: onClick ? 'pointer' : 'default',
           }}
           initial={variant === 'fade' ? { opacity: 0 } : { x: 40, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
@@ -146,132 +240,169 @@ function AnimatedImage({
 
 /** ------------ 詳細モーダル ------------ */
 function DetailsModal({
-  open, onClose, placeId,
-}: {open:boolean; onClose:()=>void; placeId:string}) {
+  open, onClose, placeId, fallbackName,
+}: { open: boolean; onClose: () => void; placeId: string; fallbackName?: string }) {
   const [loading, setLoading] = useState(false);
   const [d, setD] = useState<PlaceDetails | null>(null);
 
   useEffect(() => {
-    if (!open) return;
-    (async () => {
-      try {
-        setLoading(true);
-        const r = await fetch(`/api/details?placeId=${encodeURIComponent(placeId)}`, { cache:'no-store' });
-        const detailJson = await r.json();
-        setD(detailJson.details ?? null);
-      } catch {
-        setD(null);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    if (!open || !placeId) return;
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoading(true);
+    setD(null);
+    fetchDetails(placeId)
+      .then((res) => { if (!cancelled) setD(res); })
+      .catch(() => { if (!cancelled) setD(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [open, placeId]);
 
-  const todayText = (() => {
-    if (!d?.openingHours?.weekday_text) return null;
-    const days = d.openingHours.weekday_text as string[];
-    const i = new Date().getDay(); // 0=日
-    const wd = ['日','月','火','水','木','金','土'][i];
-    const hit = days.find(s => s.startsWith(wd));
-    return hit ?? days[i] ?? null;
-  })();
+  // Esc で閉じる
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
   if (!open) return null;
 
+  const weekdays = d?.openingHours?.weekday_text ?? [];
+  const todayText = (() => {
+    if (weekdays.length === 0) return null;
+    const i = new Date().getDay(); // 0=日
+    const wd = ['日', '月', '火', '水', '木', '金', '土'][i];
+    return weekdays.find((s) => s.startsWith(wd)) ?? weekdays[(i + 6) % 7] ?? null;
+  })();
+  const name = d?.name ?? fallbackName ?? '';
+  const price = priceLabel(d?.priceLevel);
+  const openNow = d?.openingHours?.open_now ?? null;
+
   return (
-    <div style={{
-      position:'fixed', inset:0, background:'rgba(0,0,0,0.6)',
-      display:'flex', alignItems:'center', justifyContent:'center', zIndex:4000
-    }} onClick={onClose}>
+    <div
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000,
+      }}
+      onClick={onClose}
+    >
       <div
+        role="dialog"
+        aria-modal="true"
         style={{
-          width:'min(92vw, 520px)', maxHeight:'90vh', overflow:'auto',
-          background:'var(--card)', color:'var(--text)', borderRadius:12,
-          padding:14, position:'relative', boxShadow:'0 10px 30px var(--elev)'
+          width: 'min(92vw, 520px)', maxHeight: '88vh', overflow: 'auto',
+          background: 'var(--card)', color: 'var(--text)', borderRadius: 14,
+          padding: 16, position: 'relative', boxShadow: '0 10px 30px var(--elev)',
         }}
-        onClick={(e)=>e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
-          style={{ position:'absolute', top:8, right:10, background:'transparent', border:'none', fontSize:20, color:'var(--text)' }}
+          aria-label="閉じる"
+          style={{ position: 'absolute', top: 6, right: 8, background: 'transparent', border: 'none', fontSize: 24, color: 'var(--text)', padding: 6 }}
         >
           ×
         </button>
 
-        {loading && <div>読み込み中…</div>}
+        {loading && <div style={{ padding: '24px 0' }}>読み込み中…</div>}
         {!loading && d && (
           <>
-            <h2 style={{ margin:'8px 0 4px' }}>{d.name}</h2>
-            <div style={{ color:'var(--text-muted)', fontSize:14 }}>{d.address}</div>
-            <div style={{ display:'grid', gap:8, marginTop:12 }}>
-              {todayText && <div><b>今日の営業時間</b><br/>{todayText}</div>}
-              <div><b>評価</b>：{d.rating ?? '-'}（{d.userRatingsTotal}件）</div>
-              {d.phone && <div><b>電話</b>：<a href={`tel:${d.phone}`} style={{ color:'var(--text)' }}>{d.phone}</a></div>}
-              {d.website && (
-                <div><b>公式サイト</b>：
-                  <a href={d.website} target="_blank" rel="noreferrer" style={{ color:'var(--text)', wordBreak:'break-all', textDecoration:'underline' }}>
-                    {d.website}
-                  </a>
-                </div>
+            <h2 style={{ margin: '4px 32px 4px 0', fontSize: 20 }}>{name}</h2>
+            <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{d.address}</div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginTop: 8, fontSize: 14 }}>
+              {d.rating != null && (
+                <span><span style={{ color: '#f59e0b' }}>★</span> {d.rating.toFixed(1)}（{formatCount(d.userRatingsTotal)}件）</span>
               )}
-              {d.mapUrl && (
-                <div><b>Googleマップ</b>：
-                  <a href={d.mapUrl} target="_blank" rel="noreferrer" style={{ color:'var(--text)', textDecoration:'underline' }}>
-                    {d.mapUrl}
-                  </a>
-                </div>
+              {price && <span>{price}</span>}
+              {openNow != null && (
+                <span style={{ color: openNow ? '#10b981' : 'var(--text-muted)', fontWeight: 700 }}>
+                  {openNow ? '営業中' : '営業時間外'}
+                </span>
               )}
             </div>
+
+            {/* 行動ボタン */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))', gap: 8, marginTop: 14 }}>
+              <a href={mapsDirectionsUrl(name, placeId)} target="_blank" rel="noreferrer"
+                style={{ ...smallBtn, padding: '10px 8px', fontSize: 13, background: 'var(--primary)', color: 'var(--bg)', border: 'none', fontWeight: 700 }}>
+                🚶 経路
+              </a>
+              <a href={d.mapUrl ?? mapsPlaceUrl(name, placeId)} target="_blank" rel="noreferrer" style={{ ...smallBtn, padding: '10px 8px', fontSize: 13 }}>
+                🗺 地図
+              </a>
+              {d.phone && (
+                <a href={`tel:${d.phone.replace(/[^\d+]/g, '')}`} style={{ ...smallBtn, padding: '10px 8px', fontSize: 13 }}>
+                  📞 電話
+                </a>
+              )}
+              {d.website && (
+                <a href={d.website} target="_blank" rel="noreferrer" style={{ ...smallBtn, padding: '10px 8px', fontSize: 13 }}>
+                  🔗 公式サイト
+                </a>
+              )}
+            </div>
+
+            {todayText && (
+              <div style={{ marginTop: 14, fontSize: 14 }}>
+                <b>今日の営業時間</b>
+                <div>{todayText}</div>
+                {weekdays.length > 1 && (
+                  <details style={{ marginTop: 4 }}>
+                    <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: 13 }}>すべての曜日</summary>
+                    <div style={{ fontSize: 13, lineHeight: 1.7, marginTop: 4 }}>
+                      {weekdays.map((w) => <div key={w}>{w}</div>)}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+            {d.phone && <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text-muted)' }}>電話：{d.phone}</div>}
+
             {d.photoRefs?.length > 0 && (
               <>
-                <div style={{ marginTop:14, fontWeight:700 }}>写真</div>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:8 }}>
-                  {d.photoRefs.slice(0,6).map((ref, i) => (
-                    <img key={i} src={photoUrl(ref, 800)} alt={`ph-${i}`} style={{ width:'100%', height:120, objectFit:'cover', borderRadius:6 }} />
+                <div style={{ marginTop: 14, fontWeight: 700 }}>写真</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                  {d.photoRefs.slice(0, 6).map((ref, i) => (
+                    <img key={ref} src={photoUrl(ref, 600)} alt={`${name} の写真 ${i + 1}`} loading="lazy"
+                      style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8 }} />
                   ))}
                 </div>
               </>
             )}
           </>
         )}
-        {!loading && !d && <div>情報を取得できませんでした。</div>}
+        {!loading && !d && <div style={{ padding: '24px 0' }}>情報を取得できませんでした。少し待ってから開き直してください。</div>}
       </div>
     </div>
   );
 }
 
-/** ------------ 距離表示 ------------ */
-function CardDistance({ lat, lng }:{lat:number|null; lng:number|null}) {
-  const [pos, setPos] = useState<{lat:number; lng:number} | null>(null);
-  useEffect(() => {
-    if (!('geolocation' in navigator)) return;
-    navigator.geolocation.getCurrentPosition(
-      p => setPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      ()=>{},
-      { enableHighAccuracy:false, timeout: 5000 }
-    );
-  }, []);
-  const dist = useMemo(() => {
-    if (!pos || lat==null || lng==null) return null;
-    return haversineMeters(pos, { lat, lng });
-  }, [pos, lat, lng]);
-  return <div>📏 {formatDistance(dist)}</div>;
-}
+/** ------------ 先頭カード（上=詳細 / 横=LIKE・NOPE） ------------ */
+const cardVariants: Variants = {
+  initial: { opacity: 0, scale: 0.95 },
+  animate: { opacity: 1, scale: 1 },
+  exit: (dir: SwipeDir | null) => ({
+    x: dir === 'right' ? 520 : dir === 'left' ? -520 : 0,
+    rotate: dir === 'right' ? 15 : dir === 'left' ? -15 : 0,
+    opacity: 0,
+    transition: { duration: 0.28 },
+  }),
+};
 
-/** ------------ 検索側：先頭カード（上=詳細 / 横=LIKE・NOPE） ------------ */
 function SwipeableCard({
   card,
+  userPos,
   onSwiped,
   onSwipeUp,
   onTapImage,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  eager = false,
 }: {
   card: PlaceCard;
-  onSwiped: (dir: 'left' | 'right') => void;
+  userPos: LatLng | null;
+  onSwiped: (dir: SwipeDir) => void;
   onSwipeUp: () => void;
   onTapImage: () => void;
-  eager?: boolean;
 }) {
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-200, 0, 200], [-10, 0, 10]);
@@ -280,8 +411,6 @@ function SwipeableCard({
 
   /** 画像エリア内から開始したか（上フリック許可） */
   const gestureInImageRef = useRef(false);
-
-  /** 画像エリアの参照（スクロール抑止の保険を付与） */
   const imgAreaRef = useRef<HTMLDivElement | null>(null);
 
   /** iOS Safari でのみネイティブ touchmove を passive:false で付与（警告回避） */
@@ -290,7 +419,7 @@ function SwipeableCard({
     if (typeof navigator === 'undefined') return;
     const ua = navigator.userAgent;
     const isIOS = /iP(hone|ad|od)/i.test(ua);
-    const isWebKit = /WebKit/i.test(ua) && !/CriOS|FxiOS|EdgiOS/i.test(ua); // Safari 系
+    const isWebKit = /WebKit/i.test(ua) && !/CriOS|FxiOS|EdgiOS/i.test(ua);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setNeedNativePrevent(isIOS && isWebKit);
   }, []);
@@ -299,150 +428,134 @@ function SwipeableCard({
     const el = imgAreaRef.current;
     if (!el || !needNativePrevent) return;
     const onTouchMoveNative = (ev: TouchEvent) => {
-      // iOS Safari でのみ抑止（passive:false なので警告は出ない）
       if (ev.cancelable) ev.preventDefault();
     };
     el.addEventListener('touchmove', onTouchMoveNative, { passive: false });
     return () => el.removeEventListener('touchmove', onTouchMoveNative);
   }, [needNativePrevent]);
 
-  /** Framer で上フリックを判定（offset/velocity ベース） */
+  /** 上フリック判定（offset/velocity ベース） */
   const onPanEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     const { offset, velocity } = info;
-    const ox = offset.x;
-    const oy = offset.y;
-    const vy = velocity.y;
-
-    const verticalIntent = Math.abs(oy) >= Math.abs(ox) * 1.4; // 誤爆抑制
-    const DIST_UP = -80;   // 上方向は負値（距離閾値）
-    const VEL_UP  = -300;  // 上方向の速度閾値（px/s）
-
-    if (gestureInImageRef.current && verticalIntent && (oy < DIST_UP || vy < VEL_UP)) {
+    const verticalIntent = Math.abs(offset.y) >= Math.abs(offset.x) * 1.4; // 誤爆抑制
+    if (gestureInImageRef.current && verticalIntent && (offset.y < -80 || velocity.y < -300)) {
       onSwipeUp();
     }
-
     gestureInImageRef.current = false;
   };
+
+  const total = Math.max(1, card.photoRefs?.length || card.photosCount || 1);
+  const idx = (card.currentIdx ?? 0) + 1;
 
   return (
     <motion.div
       style={{
-        position:'absolute', inset:0, borderRadius:16, overflow:'hidden',
-        background:'var(--card)', color:'var(--text)', boxShadow:'0 10px 30px var(--elev)',
+        position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
+        background: 'var(--card)', color: 'var(--text)', boxShadow: '0 10px 30px var(--elev)',
         x, rotate,
-        touchAction:'pan-y', // 画像外は縦スクロール許可
-        zIndex:1000
+        touchAction: 'pan-y',
+        zIndex: 1000,
       }}
       drag="x"
       dragElastic={0.2}
       dragConstraints={{ left: 0, right: 0 }}
       onDragEnd={(_, info) => {
         const ox = info.offset.x;
-        if (ox > SWIPE_THRESHOLD) onSwiped('right');
-        else if (ox < -SWIPE_THRESHOLD) onSwiped('left');
+        const vx = info.velocity.x;
+        if (ox > SWIPE_THRESHOLD || (ox > 40 && vx > 600)) onSwiped('right');
+        else if (ox < -SWIPE_THRESHOLD || (ox < -40 && vx < -600)) onSwiped('left');
         else x.set(0);
       }}
       onPanEnd={onPanEnd}
-      initial={{ opacity:0, scale:0.95 }}
-      animate={{ opacity:1, scale:1 }}
-      exit={{ opacity:0, scale:0.95 }}
+      variants={cardVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
     >
-      {/* 営業中バッジ */}
-      <div style={{
-        position:'absolute', top:8, right:8, padding:'4px 10px',
-        borderRadius:999, background: card.openNow ? 'rgba(16,185,129,0.9)' : 'rgba(107,114,128,0.9)',
-        color:'#fff', fontSize:12, fontWeight:700, zIndex:5,
-      }}>
-        {card.openNow ? '営業中' : '営業時間外'}
-      </div>
-
       {/* LIKE/NOPE */}
       <motion.div style={{
-        position:'absolute', top:16, left:16, padding:'6px 10px',
-        borderRadius:8, background:'rgba(16,185,129,0.9)', color:'#fff',
-        fontWeight:700, opacity:likeOpacity, pointerEvents:'none', zIndex:5
+        position: 'absolute', top: 18, left: 16, padding: '6px 12px',
+        borderRadius: 8, border: '3px solid #10b981', color: '#10b981', background: 'rgba(255,255,255,0.85)',
+        fontWeight: 800, fontSize: 18, opacity: likeOpacity, pointerEvents: 'none', zIndex: 7, rotate: -12,
       }}>LIKE</motion.div>
       <motion.div style={{
-        position:'absolute', top:16, right:16, padding:'6px 10px',
-        borderRadius:8, background:'rgba(239,68,68,0.9)', color:'#fff',
-        fontWeight:700, opacity:nopeOpacity, pointerEvents:'none', zIndex:5
+        position: 'absolute', top: 18, right: 16, padding: '6px 12px',
+        borderRadius: 8, border: '3px solid #ef4444', color: '#ef4444', background: 'rgba(255,255,255,0.85)',
+        fontWeight: 800, fontSize: 18, opacity: nopeOpacity, pointerEvents: 'none', zIndex: 7, rotate: 12,
       }}>NOPE</motion.div>
 
       {/* 画像エリア（ここだけスクロール抑止） */}
       <div
         ref={imgAreaRef}
         data-image-area="true"
-        onPointerDownCapture={() => { gestureInImageRef.current = true; }}  // 画像内開始を記録
+        onPointerDownCapture={() => { gestureInImageRef.current = true; }}
         style={{
-          position:'relative',
-          width:'100%',
-          height:'58%',
-          touchAction:'none',                           // ← スクロール/ズーム/パン無効（この領域のみ）
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          overscrollBehavior: 'contain' as any,         // ← 親へのオーバースクロール伝播抑止
-          pointerEvents:'auto'
+          position: 'relative', width: '100%', height: '60%',
+          touchAction: 'none',
+          overscrollBehavior: 'contain',
         }}
       >
-        <AnimatedImage
-          src={card.image}
-          alt={card.name}
-          onClick={onTapImage}      // タップで写真切替
-          variant="slide"
-        />
+        <AnimatedImage src={card.image} alt={card.name} onClick={onTapImage} variant="slide" />
+
+        {/* 写真の枚数インジケータ */}
+        {total > 1 && (
+          <div style={{ position: 'absolute', top: 8, left: 0, right: 0, display: 'flex', gap: 4, padding: '0 10px', zIndex: 6, pointerEvents: 'none' }}>
+            {Array.from({ length: Math.min(total, 10) }).map((_, i) => (
+              <div key={i} style={{
+                flex: 1, height: 3, borderRadius: 2,
+                background: i === (idx - 1) % 10 ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.4)',
+              }} />
+            ))}
+          </div>
+        )}
 
         {/* 詳細ボタン */}
         <button
           onClick={onSwipeUp}
-          title="詳細を開く"
-          style={{
-            position:'absolute', left:10, top:10, zIndex:6,
-            padding:'6px 10px', borderRadius:999,
-            background:'rgba(0,0,0,0.55)', color:'#fff', border:'none', fontSize:12
-          }}
           aria-label="詳細を開く"
+          style={{
+            position: 'absolute', left: 10, top: 18, zIndex: 6,
+            padding: '6px 10px', borderRadius: 999,
+            background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', fontSize: 12,
+          }}
         >
           詳細
         </button>
 
-        {/* タップヒント */}
-        <div
-          aria-hidden="true"
-          className="tap-hint"
-          style={{
-            position:'absolute', right:10, bottom:10, zIndex:6,
-            padding:'6px 10px', borderRadius:999,
-            background:'rgba(0,0,0,0.45)', color:'#fff', fontSize:12,
-            pointerEvents:'none', userSelect:'none'
-          }}
-        >
-          タップで写真切替
+        {/* 営業状況バッジ */}
+        <div style={{
+          position: 'absolute', left: 10, bottom: 10, padding: '4px 10px',
+          borderRadius: 999, zIndex: 6, color: '#fff', fontSize: 12, fontWeight: 700,
+          background: card.openNow === true ? 'rgba(16,185,129,0.92)' : card.openNow === false ? 'rgba(107,114,128,0.92)' : 'rgba(0,0,0,0.45)',
+        }}>
+          {card.openNow === true ? '営業中' : card.openNow === false ? '営業時間外' : '営業時間不明'}
         </div>
 
-        {/* 下部ハンドル（↑ 詳細） */}
-        <div
-          aria-hidden="true"
-          style={{
-            position:'absolute',
-            left:'50%', bottom:4, transform:'translateX(-50%)',
-            zIndex:6,
-            color:'rgba(255,255,255,0.55)',
-            fontSize:12,
-            textShadow:'0 1px 1px rgba(0,0,0,0.35)',
-            pointerEvents:'none', userSelect:'none'
-          }}
-        >
-          ↑ 詳細
+        {/* タップヒント */}
+        <div aria-hidden="true" className="tap-hint" style={{
+          position: 'absolute', right: 10, bottom: 10, zIndex: 6,
+          padding: '6px 10px', borderRadius: 999,
+          background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: 12,
+          pointerEvents: 'none', userSelect: 'none',
+        }}>
+          タップで写真切替 / ↑で詳細
         </div>
       </div>
 
-      {/* 店名＋住所/時間/距離 */}
-      <div style={{ padding:14 }}>
-        <h2 style={{ margin:'0 0 6px', fontSize:18 }}>{card.name}</h2>
-        <div style={{ color:'var(--text-muted)', fontSize:13, lineHeight:1.5 }}>
-          {card.address && <div>📍 {card.address}</div>}
-          <div>🕒 {card.openNow === null ? '時間情報なし' : (card.openNow ? '営業中' : '営業時間外')}（詳細は写真で上フリック）</div>
-          <CardDistance lat={card.lat} lng={card.lng} />
+      {/* 店名＋評価・価格・距離＋住所 */}
+      <div style={{ padding: '12px 14px' }}>
+        <h2 style={{ margin: '0 0 6px', fontSize: 19, lineHeight: 1.3 }}>{card.name}</h2>
+        <div style={{ fontSize: 14, marginBottom: 6 }}>
+          <MetaLine c={card} pos={userPos} />
         </div>
+        {card.address && (
+          <div style={{
+            color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5,
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}>
+            📍 {card.address}
+          </div>
+        )}
       </div>
     </motion.div>
   );
@@ -452,44 +565,72 @@ function SwipeableCard({
 export default function Home() {
   const mounted = useMounted();
 
-  /** テーマ（初回は 'light' 固定 → マウント後復元） */
-  const [theme, setTheme] = useState<'light'|'dark'>('light');
+  /** テーマ */
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('theme');
-      if (stored === 'dark' || stored === 'light') setTheme(stored as 'light'|'dark');
+      const stored = localStorage.getItem(STORAGE_KEYS.theme);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (stored === 'dark' || stored === 'light') setTheme(stored);
     } catch {}
   }, []);
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    try { localStorage.setItem('theme', theme); } catch {}
+    try { localStorage.setItem(STORAGE_KEYS.theme, theme); } catch {}
   }, [theme]);
 
-  // 検索
+  /** 保存データ */
+  const [favorites, setFavorites, favLoaded] = usePersistent<Favorite[]>(STORAGE_KEYS.favorites, []);
+  const [userTags, setUserTags] = usePersistent<string[]>(STORAGE_KEYS.tags, ['カフェ', '居酒屋', 'バー']);
+  const [seenIds, setSeenIds, seenLoaded] = usePersistent<string[]>(STORAGE_KEYS.seen, []);
+  const [filtersRaw, setFiltersRaw] = usePersistent<Filters>(STORAGE_KEYS.filters, DEFAULT_FILTERS);
+  const filters: Filters = useMemo(() => ({ ...DEFAULT_FILTERS, ...filtersRaw }), [filtersRaw]);
+  const setFilter = <K extends keyof Filters>(k: K, v: Filters[K]) => setFiltersRaw((prev) => ({ ...DEFAULT_FILTERS, ...prev, [k]: v }));
+
+  /** 検索 */
   const [q, setQ] = useState('梅田 居酒屋');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<ErrorInfo | null>(null);
   const [deck, setDeck] = useState<PlaceCard[]>([]);
-  const [favorites, setFavorites] = usePersistentArray<Favorite>('favorites_v8', []);
+  const [nextToken, setNextToken] = useState<string | null>(null);
+  const [stats, setStats] = useState<SearchStats | null>(null);
+  const [userPos, setUserPos] = useState<LatLng | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const searchIdRef = useRef(0);
+  const loadingMoreRef = useRef(false);
+
+  /** スワイプ履歴（やり直し用）・飛ばす方向（アニメ用） */
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [exitDir, setExitDir] = useState<SwipeDir | null>(null);
+
+  /** 最新値を非同期処理から参照するための ref */
+  const seenRef = useRef<string[]>(seenIds);
+  const favRef = useRef<Favorite[]>(favorites);
+  const userPosRef = useRef<LatLng | null>(null);
+  useEffect(() => { seenRef.current = seenIds; }, [seenIds]);
+  useEffect(() => { favRef.current = favorites; }, [favorites]);
+  useEffect(() => { userPosRef.current = userPos; }, [userPos]);
 
   // お気に入りフィルタ
   const [favFilterText, setFavFilterText] = useState('');
   const [favFilterTags, setFavFilterTags] = useState<Set<string>>(new Set());
+  const [favFilterMode, setFavFilterMode] = useState<'any' | 'all'>('any');
+  const [sortMode, setSortMode] = useState<SortMode>('new');
 
   // 詳細モーダル
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsPlaceId, setDetailsPlaceId] = useState<string>('');
-
-  // タグ（グローバル）
-  const [userTags, setUserTags] = usePersistentArray<string>('user_tags_global', ['カフェ', '居酒屋', 'バー']);
-
-  // 詳細の写真キャッシュ
-  const detailsPhotosCacheRef = useRef<Record<string, string[]>>({});
+  const [detailsName, setDetailsName] = useState<string>('');
+  const openDetails = useCallback((id: string, name?: string) => {
+    setDetailsPlaceId(id);
+    setDetailsName(name ?? '');
+    setDetailsOpen(true);
+  }, []);
+  const closeDetails = useCallback(() => setDetailsOpen(false), []);
 
   // お気に入りタブ
-  type FavTab = 'list' | 'tag-add';
+  type FavTab = 'list' | 'map' | 'tag-add';
   const [favTab, setFavTab] = useState<FavTab>('list');
 
   // タグ追加タブ用
@@ -500,169 +641,310 @@ export default function Home() {
   const [showGlobalAddBar, setShowGlobalAddBar] = useState(false);
   const [globalTagInput, setGlobalTagInput] = useState('');
 
-  // タグ編集シート（お店ごと）／タグ管理／絞り込みモード
+  // タグ編集シート（お店ごと）／タグ管理
   const [tagSheetFavId, setTagSheetFavId] = useState<string | null>(null);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
-  const [favFilterMode, setFavFilterMode] = useState<'any' | 'all'>('any');
 
-  const visible = useMemo(() => deck.slice(0, VISIBLE_STACK), [deck]);
-  const top = visible[0];
-  const visibleRest = useMemo(() => deck.slice(1, VISIBLE_STACK), [deck]);
+  // 絞り込みパネル
+  const [filterOpen, setFilterOpen] = useState(false);
 
-  /** 検索 */
-  async function searchCore(withGeo?: { lat: number; lng: number }) {
+  // トースト（短い通知＋元に戻す）
+  const [toast, setToast] = useState<{ id: number; msg: string; actionLabel?: string; action?: () => void } | null>(null);
+  const showToast = useCallback((msg: string, actionLabel?: string, action?: () => void) => {
+    setToast({ id: Date.now() + Math.random(), msg, actionLabel, action });
+  }, []);
+  useEffect(() => {
+    if (!toast) return;
+    const id = toast.id;
+    const t = setTimeout(() => setToast((cur) => (cur?.id === id ? null : cur)), 4500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // バックアップ読み込み用
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+
+  /** 表示中のデッキ（絞り込み適用後） */
+  const shownDeck = useMemo(() => deck.filter((c) => passesFilters(c, filters, userPos)), [deck, filters, userPos]);
+  const top = shownDeck[0];
+  const visibleRest = useMemo(() => shownDeck.slice(1, VISIBLE_STACK), [shownDeck]);
+
+  /** 除外するID（見送り済み・お気に入り済み） */
+  const excludedIds = () => new Set([...seenRef.current, ...favRef.current.map((f) => f.id)]);
+
+  /** 検索（1ページ目） */
+  async function searchCore(query: string, withGeo?: LatLng | null) {
+    const myId = ++searchIdRef.current;
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setError({ message: 'キーワードを入力してください（例：梅田 居酒屋）' });
+      setLoading(false);
+      return;
+    }
     try {
-      setError(null); setLoading(true);
+      setError(null);
+      setLoading(true);
       abortRef.current?.abort();
       abortRef.current = new AbortController();
 
-      const params = new URLSearchParams({ q });
+      const params = new URLSearchParams({ q: trimmed });
       if (withGeo) { params.set('lat', String(withGeo.lat)); params.set('lng', String(withGeo.lng)); }
-      const res = await fetch(`/api/places?${params.toString()}`, { cache:'no-store', signal: abortRef.current.signal });
+      const { cards, nextPageToken } = await fetchPlaces(params, abortRef.current.signal);
+      if (myId !== searchIdRef.current) return;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const resJson = await res.json() as { cards?: any[] };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const raw: any[] = Array.isArray(resJson?.cards) ? (resJson.cards as any[]) : [];
+      const items = toCards(cards).sort((a, b) => b.photosCount - a.photosCount);
+      const ex = excludedIds();
+      const fresh = items.filter((c) => !ex.has(c.id));
 
-      const items: PlaceCard[] = raw
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .filter((p: any) => !!p.photoRef)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .map((p: any, idx: number): PlaceCard => ({
-          id: p.placeId ?? `p-${idx}`,
-          name: p.name ?? '名称不明',
-          image: photoUrl(p.photoRef, 1200),
-          openNow: p.openNow ?? null,
-          photosCount: typeof p.photosCount === 'number' ? p.photosCount : 1,
-          photoRefs: (p.photoRefs ?? []) as string[],
-          currentIdx: 0,
-          address: p.address ?? null,
-          types: p.types ?? [],
-          lat: p.lat ?? null,
-          lng: p.lng ?? null,
-        }))
-        .sort((a, b) => b.photosCount - a.photosCount);
-
-      setDeck(items.slice(0, 30));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (e: any) {
-      if (e?.name !== 'AbortError') setError('検索に失敗しました。少し待ってから再実行してください。');
-    } finally { setLoading(false); }
+      setDeck(fresh);
+      setNextToken(nextPageToken);
+      setStats({ query: trimmed, raw: cards.length, withPhoto: items.length, hidden: items.length - fresh.length });
+      setHistory([]);
+    } catch (e) {
+      if ((e as Error)?.name === 'AbortError') return;
+      if (myId !== searchIdRef.current) return;
+      const se = e as SearchError;
+      setError({ message: se.message || '検索に失敗しました。', detail: se.detail });
+    } finally {
+      if (myId === searchIdRef.current) setLoading(false);
+    }
   }
-  function tryGeolocateAndSearch() {
-    if (!('geolocation' in navigator)) { searchCore(); return; }
+
+  function search(query: string = q) {
+    if (!('geolocation' in navigator)) { searchCore(query); return; }
     setLoading(true);
     navigator.geolocation.getCurrentPosition(
-      (pos) => searchCore({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => searchCore(),
-      { enableHighAccuracy:false, timeout:5000 }
+      (pos) => {
+        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUserPos(p);
+        searchCore(query, p);
+      },
+      () => searchCore(query, userPosRef.current),
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 5 * 60 * 1000 }
     );
   }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { tryGeolocateAndSearch(); }, []); // 初回のみ
+
+  /** 続きのページ（最大60件まで） */
+  async function loadMore() {
+    if (!nextToken || loadingMoreRef.current) return;
+    const myId = searchIdRef.current;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const { cards, nextPageToken } = await fetchPlaces(new URLSearchParams({ pagetoken: nextToken }));
+      if (myId !== searchIdRef.current) return;
+      const items = toCards(cards).sort((a, b) => b.photosCount - a.photosCount);
+      const ex = excludedIds();
+      setDeck((prev) => {
+        const ids = new Set(prev.map((c) => c.id));
+        return [...prev, ...items.filter((c) => !ex.has(c.id) && !ids.has(c.id))];
+      });
+      setStats((s) => s && ({ ...s, raw: s.raw + cards.length, withPhoto: s.withPhoto + items.length }));
+      setNextToken(nextPageToken);
+    } catch {
+      if (myId === searchIdRef.current) setNextToken(null); // 続きは諦める（今のカードはそのまま）
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }
+
+  // 初回：保存データの読み込みが終わってから検索（見送り済みを正しく除外するため）
+  const didInitRef = useRef(false);
+  useEffect(() => {
+    if (!favLoaded || !seenLoaded || didInitRef.current) return;
+    didInitRef.current = true;
+    search(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [favLoaded, seenLoaded]);
+
+  // 残りが少なくなったら続きを取得
+  useEffect(() => {
+    if (loading || !nextToken) return;
+    if (shownDeck.length <= PREFETCH_WHEN_LEFT) loadMore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownDeck.length, nextToken, loading]);
+
+  /** ジャンルのクイック切り替え：エリア（最初の語）はそのままジャンルだけ入れ替える */
+  function pickGenre(g: string) {
+    const words = q.trim().split(/\s+/).filter(Boolean);
+    const area = words.length > 0 && !GENRES.includes(words[0]) ? words[0] : '';
+    const nq = area ? `${area} ${g}` : g;
+    setQ(nq);
+    search(nq);
+  }
+  const currentGenre = useMemo(() => {
+    const words = q.trim().split(/\s+/);
+    return GENRES.find((g) => words.includes(g)) ?? null;
+  }, [q]);
 
   /** 画像切替（不足時は Details から補完） */
   async function nextPhotoWithFetch(placeId: string) {
-    const card = deck.find(c => c.id === placeId);
+    const card = deck.find((c) => c.id === placeId);
     if (!card) return;
 
-    let refs = card.photoRefs;
-    if (!refs || refs.length <= 1) {
-      const cached = detailsPhotosCacheRef.current[placeId];
-      if (cached && cached.length) {
-        refs = Array.from(new Set([...(refs||[]), ...cached]));
-        setDeck(prev => prev.map(c => c.id === placeId ? ({ ...c, photoRefs: refs, photosCount: refs.length }) : c));
-      } else {
-        try {
-          const r = await fetch(`/api/details?placeId=${encodeURIComponent(placeId)}`, { cache:'no-store' });
-          const detailJson = await r.json();
-          const extra: string[] = (detailJson.details?.photoRefs ?? []).filter(Boolean);
-          detailsPhotosCacheRef.current[placeId] = extra;
-          if (extra.length) {
-            refs = Array.from(new Set([...(refs||[]), ...extra]));
-            setDeck(prev => prev.map(c => c.id === placeId ? ({ ...c, photoRefs: refs, photosCount: refs.length }) : c));
-          }
-        } catch {}
-      }
+    if (!card.photoRefs || card.photoRefs.length <= 1) {
+      try {
+        const det = await fetchDetails(placeId);
+        const extra = (det?.photoRefs ?? []).filter(Boolean);
+        if (extra.length) {
+          setDeck((prev) => prev.map((c) => {
+            if (c.id !== placeId) return c;
+            const refs = Array.from(new Set([...(c.photoRefs || []), ...extra]));
+            return { ...c, photoRefs: refs, photosCount: refs.length };
+          }));
+        }
+      } catch {}
     }
 
-    setDeck(prev => prev.map(c => {
+    setDeck((prev) => prev.map((c) => {
       if (c.id !== placeId) return c;
       const total = c.photoRefs?.length || 1;
       const next = ((c.currentIdx ?? 0) + 1) % total;
       const ref = c.photoRefs[next] ?? getRefFromImageUrl(c.image);
-      return { ...c, currentIdx: next, image: photoUrl(ref, 1200) };
+      return { ...c, currentIdx: next, image: photoUrl(ref) };
     }));
   }
 
-  /** お気に入り操作 */
-  function addFavorite(c: PlaceCard) {
-    setFavorites(prev => prev.some(p => p.id === c.id) ? prev : [...prev, { ...c, tags: [] }]);
+  /** スワイプ・やり直し */
+  function handleSwipe(card: PlaceCard, dir: SwipeDir) {
+    setExitDir(dir);
+    const already = favorites.some((f) => f.id === card.id);
+    if (dir === 'right') {
+      if (!already) setFavorites((prev) => (prev.some((p) => p.id === card.id) ? prev : [...prev, { ...card, tags: [], addedAt: Date.now() }]));
+    } else {
+      setSeenIds((prev) => (prev.includes(card.id) ? prev : [...prev, card.id].slice(-MAX_SEEN)));
+    }
+    setHistory((prev) => [...prev, { card, dir, addedFav: dir === 'right' && !already }].slice(-30));
+    setDeck((prev) => prev.filter((c) => c.id !== card.id));
   }
+
+  function undo() {
+    const last = history[history.length - 1];
+    if (!last) return;
+    setExitDir(null);
+    setHistory((prev) => prev.slice(0, -1));
+    if (last.dir === 'right' && last.addedFav) setFavorites((prev) => prev.filter((f) => f.id !== last.card.id));
+    if (last.dir === 'left') setSeenIds((prev) => prev.filter((id) => id !== last.card.id));
+    setDeck((prev) => [last.card, ...prev.filter((c) => c.id !== last.card.id)]);
+  }
+
+  function resetSeen() {
+    setSeenIds([]);
+    seenRef.current = [];
+    showToast('見送り履歴をリセットしました');
+    searchCore(stats?.query ?? q, userPosRef.current);
+  }
+
+  // キーボード操作（PC向け）：← NOPE / → LIKE / ↑ 詳細 / Backspace 戻す
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      if (detailsOpen || tagSheetFavId || tagManagerOpen) return;
+      if (e.key === 'ArrowRight' && top) { e.preventDefault(); handleSwipe(top, 'right'); }
+      else if (e.key === 'ArrowLeft' && top) { e.preventDefault(); handleSwipe(top, 'left'); }
+      else if (e.key === 'ArrowUp' && top) { e.preventDefault(); openDetails(top.id, top.name); }
+      else if (e.key === 'Backspace' && history.length > 0) { e.preventDefault(); undo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  /** お気に入り操作 */
   function deleteFavorite(id: string) {
-    setFavorites(prev => prev.filter(f => f.id !== id));
-    setSelectedFavIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+    const idx = favorites.findIndex((f) => f.id === id);
+    if (idx < 0) return;
+    const removed = favorites[idx];
+    setFavorites((prev) => prev.filter((f) => f.id !== id));
+    setSelectedFavIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    showToast(`「${removed.name}」を削除しました`, '元に戻す', () => {
+      setFavorites((prev) => (prev.some((f) => f.id === id) ? prev : [...prev.slice(0, idx), removed, ...prev.slice(idx)]));
+    });
   }
 
   /** タグ操作：お店ごとの付け外し／新規作成／全体の名前変更・削除 */
   function toggleTagOnFavorite(id: string, tag: string) {
-    setFavorites(prev => prev.map(f => {
+    setFavorites((prev) => prev.map((f) => {
       if (f.id !== id) return f;
       const cur = f.tags || [];
-      return { ...f, tags: cur.includes(tag) ? cur.filter(t => t !== tag) : [...cur, tag] };
+      return { ...f, tags: cur.includes(tag) ? cur.filter((t) => t !== tag) : [...cur, tag] };
     }));
   }
   function createTagOnFavorite(id: string, raw: string) {
     const t = raw.trim();
     if (!t) return;
-    setFavorites(prev => prev.map(f =>
+    setFavorites((prev) => prev.map((f) =>
       f.id === id ? { ...f, tags: Array.from(new Set([...(f.tags || []), t])) } : f
     ));
-    setUserTags(prev => prev.includes(t) ? prev : [...prev, t]);
+    setUserTags((prev) => (prev.includes(t) ? prev : [...prev, t]));
   }
   function renameTag(oldName: string, raw: string) {
     const n = raw.trim();
     if (!n || n === oldName) return;
-    // 既存の別タグと同名になる場合は統合される（Set で重複除去）
-    setFavorites(prev => prev.map(f =>
+    setFavorites((prev) => prev.map((f) =>
       (f.tags || []).includes(oldName)
-        ? { ...f, tags: Array.from(new Set(f.tags.map(t => t === oldName ? n : t))) }
+        ? { ...f, tags: Array.from(new Set(f.tags.map((t) => (t === oldName ? n : t)))) }
         : f
     ));
-    setUserTags(prev => Array.from(new Set(prev.map(t => t === oldName ? n : t))));
-    setFavFilterTags(prev => {
+    setUserTags((prev) => Array.from(new Set(prev.map((t) => (t === oldName ? n : t)))));
+    setFavFilterTags((prev) => {
       if (!prev.has(oldName)) return prev;
       const s = new Set(prev); s.delete(oldName); s.add(n); return s;
     });
   }
   function deleteTag(tag: string) {
-    setFavorites(prev => prev.map(f =>
-      (f.tags || []).includes(tag) ? { ...f, tags: f.tags.filter(t => t !== tag) } : f
+    setFavorites((prev) => prev.map((f) =>
+      (f.tags || []).includes(tag) ? { ...f, tags: f.tags.filter((t) => t !== tag) } : f
     ));
-    setUserTags(prev => prev.filter(t => t !== tag));
-    setFavFilterTags(prev => {
+    setUserTags((prev) => prev.filter((t) => t !== tag));
+    setFavFilterTags((prev) => {
       if (!prev.has(tag)) return prev;
       const s = new Set(prev); s.delete(tag); return s;
     });
   }
 
-  /** お気に入りフィルタ（いずれか / すべて含む） */
+  /** お気に入りの絞り込み（文字・タグ）＋並び替え */
   const filteredFavorites = useMemo(() => {
     const text = favFilterText.trim().toLowerCase();
     const tags = favFilterTags;
-    return favorites.filter(f => {
+    return favorites.filter((f) => {
       const okText = !text ||
         f.name.toLowerCase().includes(text) ||
         (f.address || '').toLowerCase().includes(text);
       const okTags = tags.size === 0 || (
         favFilterMode === 'all'
-          ? [...tags].every(t => f.tags?.includes(t))
-          : [...tags].some(t => f.tags?.includes(t))
+          ? [...tags].every((t) => f.tags?.includes(t))
+          : [...tags].some((t) => f.tags?.includes(t))
       );
       return okText && okTags;
     });
   }, [favorites, favFilterText, favFilterTags, favFilterMode]);
+
+  const sortedFavorites = useMemo(() => {
+    const arr = [...filteredFavorites];
+    if (sortMode === 'new') return arr.reverse(); // 配列は追加順なので逆順＝新しい順
+    if (sortMode === 'rating') {
+      return arr.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
+    }
+    // 近い順（位置不明は最後）
+    return arr.sort((a, b) => {
+      const da = distanceTo(userPos, a.lat, a.lng);
+      const db = distanceTo(userPos, b.lat, b.lng);
+      return (da ?? Infinity) - (db ?? Infinity);
+    });
+  }, [filteredFavorites, sortMode, userPos]);
+
+  const mapItems: MapItem[] = useMemo(() => filteredFavorites
+    .filter((f) => f.lat != null && f.lng != null)
+    .map((f) => {
+      const sub = [
+        f.rating != null ? `★${f.rating.toFixed(1)}` : null,
+        priceLabel(f.priceLevel),
+        formatDistance(distanceTo(userPos, f.lat, f.lng)),
+      ].filter(Boolean).join(' · ');
+      return { id: f.id, name: f.name, lat: f.lat as number, lng: f.lng as number, sub, href: mapsPlaceUrl(f.name, f.id) };
+    }), [filteredFavorites, userPos]);
+  const openDetailsById = useCallback((id: string) => openDetails(id), [openDetails]);
 
   /** タグごとの件数（チップ表示・管理画面用） */
   const tagCounts = useMemo(() => {
@@ -671,21 +953,20 @@ export default function Home() {
     return m;
   }, [favorites]);
 
-  const tagSheetFav = tagSheetFavId ? favorites.find(f => f.id === tagSheetFavId) ?? null : null;
+  const tagSheetFav = tagSheetFavId ? favorites.find((f) => f.id === tagSheetFavId) ?? null : null;
 
-  /** まとめてタグ付け（上の小型バー） */
   const existingAllTags = useMemo(
-    () => Array.from(new Set([...userTags, ...favorites.flatMap(f => f.tags || [])])),
+    () => Array.from(new Set([...userTags, ...favorites.flatMap((f) => f.tags || [])])),
     [userTags, favorites]
   );
   function applyTagToSelected() {
     const name = tagInput.trim();
     if (!name || selectedFavIds.size === 0) return;
-    setFavorites(prev => prev.map(f => selectedFavIds.has(f.id)
+    setFavorites((prev) => prev.map((f) => (selectedFavIds.has(f.id)
       ? { ...f, tags: Array.from(new Set([...(f.tags || []), name])) }
-      : f
-    ));
-    if (!userTags.includes(name)) setUserTags(prev => [...prev, name]);
+      : f)));
+    if (!userTags.includes(name)) setUserTags((prev) => [...prev, name]);
+    showToast(`${selectedFavIds.size}件に「${name}」を付けました`);
     setTagInput('');
     setSelectedFavIds(new Set());
   }
@@ -694,12 +975,109 @@ export default function Home() {
     const t = globalTagInput.trim();
     if (!t) return;
     if (userTags.includes(t)) {
-      alert('既に存在するタグです');
+      showToast('既に存在するタグです');
     } else {
-      setUserTags(prev => [...prev, t]);
+      setUserTags((prev) => [...prev, t]);
     }
     setGlobalTagInput('');
     setShowGlobalAddBar(false);
+  }
+
+  /** 共有リンク */
+  async function shareFavorites(list: Favorite[]) {
+    if (list.length === 0) { showToast('共有するお気に入りがありません'); return; }
+    const items = list.slice(0, MAX_SHARE);
+    const url = `${window.location.origin}/share?f=${encodeShare(items)}`;
+    const note = list.length > MAX_SHARE ? `（先頭${MAX_SHARE}件）` : '';
+    const text = `Swipickのお気に入り ${items.length}件${note}`;
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: 'Swipick', text, url });
+        return;
+      } catch (e) {
+        if ((e as Error)?.name === 'AbortError') return; // 共有シートを閉じただけ
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast(`共有リンクをコピーしました${note}`);
+    } catch {
+      window.prompt('このリンクをコピーして送ってください', url);
+    }
+  }
+
+  /** バックアップ（書き出し・読み込み） */
+  function exportBackup() {
+    const data = { app: 'swipick', version: 1, exportedAt: new Date().toISOString(), favorites, tags: userTags };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const d = new Date();
+    const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    a.href = url;
+    a.download = `swipick-backup-${ymd}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showToast(`お気に入り${favorites.length}件を書き出しました`);
+  }
+
+  async function importBackup(file: File) {
+    try {
+      const data: unknown = JSON.parse(await file.text());
+      const obj = (data && typeof data === 'object' ? data : {}) as { favorites?: unknown; tags?: unknown };
+      const list: unknown = Array.isArray(data) ? data : obj.favorites;
+      if (!Array.isArray(list)) throw new Error('invalid');
+
+      const incoming: Favorite[] = [];
+      for (const x of list) {
+        if (!x || typeof x !== 'object') continue;
+        const o = x as Record<string, unknown>;
+        if (typeof o.id !== 'string' || typeof o.name !== 'string') continue;
+        const refs = Array.isArray(o.photoRefs) ? o.photoRefs.filter((r): r is string => typeof r === 'string') : [];
+        const image = typeof o.image === 'string' && o.image.startsWith('/api/photo') ? o.image : (refs[0] ? photoUrl(refs[0]) : '');
+        incoming.push({
+          id: o.id,
+          name: o.name,
+          image,
+          openNow: null,
+          photosCount: refs.length || 1,
+          photoRefs: refs,
+          currentIdx: 0,
+          address: typeof o.address === 'string' ? o.address : null,
+          types: Array.isArray(o.types) ? o.types.filter((t): t is string => typeof t === 'string') : [],
+          lat: typeof o.lat === 'number' ? o.lat : null,
+          lng: typeof o.lng === 'number' ? o.lng : null,
+          rating: typeof o.rating === 'number' ? o.rating : null,
+          userRatingsTotal: typeof o.userRatingsTotal === 'number' ? o.userRatingsTotal : 0,
+          priceLevel: typeof o.priceLevel === 'number' ? o.priceLevel : null,
+          tags: Array.isArray(o.tags) ? o.tags.filter((t): t is string => typeof t === 'string') : [],
+          addedAt: typeof o.addedAt === 'number' ? o.addedAt : undefined,
+        });
+      }
+
+      // 既存とマージ（同じお店はタグを合体、新しいお店は末尾に追加）
+      const merged = [...favorites];
+      const index = new Map<string, number>(merged.map((f, i): [string, number] => [f.id, i]));
+      let added = 0;
+      for (const f of incoming) {
+        const i = index.get(f.id);
+        if (i != null) {
+          merged[i] = { ...merged[i], tags: Array.from(new Set([...(merged[i].tags || []), ...f.tags])) };
+        } else {
+          index.set(f.id, merged.length);
+          merged.push(f);
+          added++;
+        }
+      }
+      setFavorites(merged);
+      const tags = Array.isArray(obj.tags) ? obj.tags.filter((t): t is string => typeof t === 'string') : [];
+      setUserTags((prev) => Array.from(new Set([...prev, ...tags, ...incoming.flatMap((f) => f.tags)])));
+      showToast(`読み込みました（追加 ${added}件 / 既存 ${incoming.length - added}件）`);
+    } catch {
+      showToast('読み込めませんでした。Swipickで書き出したファイルを選んでください。');
+    }
   }
 
   /** テーマ用 CSS 変数（+ ヒントのフェードアウト） */
@@ -725,240 +1103,384 @@ export default function Home() {
       --elev: rgba(0,0,0,0.42);
     }
     body { background: var(--bg); color: var(--text); }
-    input, button { color: inherit; }
-
-    .tap-hint { animation: hintFade 2s ease 2s forwards; }
+    input, button, select { color: inherit; font: inherit; }
+    button { cursor: pointer; }
+    .tap-hint { animation: hintFade 2s ease 2.5s forwards; }
     @keyframes hintFade { to { opacity: 0; visibility: hidden; } }
+    .hscroll { scrollbar-width: none; }
+    .hscroll::-webkit-scrollbar { display: none; }
   `;
+
+  const filterActive = isFilterActive(filters);
+  const selectStyle: React.CSSProperties = {
+    padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 14, width: '100%',
+  };
+
+  /** 空状態の説明 */
+  function renderEmptyState() {
+    let title = '';
+    let body: React.ReactNode = null;
+    if (!stats) {
+      title = 'キーワードで検索してください';
+    } else if (deck.length > 0 && shownDeck.length === 0) {
+      title = '絞り込み条件に合うお店がありません';
+      body = (
+        <button onClick={() => setFiltersRaw(DEFAULT_FILTERS)} style={{ ...smallBtn, marginTop: 12, padding: '8px 14px', fontSize: 13 }}>
+          絞り込みを解除
+        </button>
+      );
+    } else if (stats.raw === 0) {
+      title = `「${stats.query}」の検索結果は0件でした`;
+      body = <div style={{ fontSize: 13, marginTop: 6 }}>エリア名やジャンルを変えてお試しください。</div>;
+    } else if (stats.withPhoto === 0) {
+      title = '写真のあるお店が見つかりませんでした';
+      body = <div style={{ fontSize: 13, marginTop: 6 }}>キーワードを変えてお試しください。</div>;
+    } else {
+      title = 'この検索のお店は全部見ました 🎉';
+      body = (
+        <div style={{ display: 'grid', gap: 8, marginTop: 12, justifyItems: 'center' }}>
+          <div style={{ fontSize: 13 }}>エリアやジャンルを変えて探してみましょう。</div>
+          {seenIds.length > 0 && (
+            <button onClick={resetSeen} style={{ ...smallBtn, padding: '8px 14px', fontSize: 13 }}>
+              見送ったお店（{seenIds.length}件）をもう一度表示
+            </button>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div style={{
+        position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        color: 'var(--text-muted)', background: 'var(--card)', borderRadius: 16,
+        textAlign: 'center', padding: 20, boxShadow: '0 10px 30px var(--elev)',
+      }}>
+        <div style={{ fontWeight: 700, color: 'var(--text)' }}>{title}</div>
+        {body}
+      </div>
+    );
+  }
+
+  const actionBtn = (color: string, size = 56): React.CSSProperties => ({
+    width: size, height: size, borderRadius: '50%', border: 'none',
+    background: 'var(--card)', color, fontSize: size * 0.42, fontWeight: 800,
+    boxShadow: '0 4px 14px var(--elev)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  });
 
   return (
     <main
       style={{
-        minHeight:'100vh', background:'var(--bg)', color:'var(--text)',
-        display:'flex', flexDirection:'column', alignItems:'center', gap:16, padding:20,
-        position:'relative'
+        minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+        padding: '16px 16px calc(32px + env(safe-area-inset-bottom))',
+        position: 'relative',
       }}
     >
-      {/* テーマトグル（左上） */}
-      <button
-        onClick={()=> setTheme(t => t==='light' ? 'dark' : 'light')}
-        title="テーマ切替"
-        style={{
-          position:'fixed', left:12, top:12, zIndex:6000,
-          width:36, height:36, borderRadius:999,
-          border:'1px solid var(--border)', background:'var(--card)', color:'var(--text)'
-        }}
-      >
-        <span suppressHydrationWarning>
-          {mounted ? (theme === 'light' ? '🌙' : '🌞') : '🌙'}
-        </span>
-      </button>
-
-      {/* タイトル：Swipick */}
-      <h1 style={{ fontSize:22, fontWeight:700 }}>Swipick</h1>
-
-      {/* 検索 */}
-      <div style={{ display:'flex', gap:8, width:360, maxWidth:'90vw' }}>
-        <input
-          value={q}
-          onChange={(e)=>setQ(e.target.value)}
-          onKeyDown={(e)=> e.key==='Enter' && tryGeolocateAndSearch()}
-          placeholder="例：梅田 居酒屋 / なんば カフェ"
-          style={{ flex:1, padding:'10px 12px', borderRadius:8, border:'1px solid var(--border)', background:'var(--card)' }}
-        />
-        <button onClick={tryGeolocateAndSearch} disabled={loading}
-          style={{ padding:'10px 12px', borderRadius:8, background:'var(--primary)', color:'var(--bg)', border:'none', minWidth:80 }}>
-          {loading ? '検索中…' : '検索'}
+      {/* ヘッダー */}
+      <div style={{ width: 360, maxWidth: '100%', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button
+          onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+          title="テーマ切替"
+          aria-label="テーマ切替"
+          style={{ width: 36, height: 36, borderRadius: 999, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)' }}
+        >
+          <span suppressHydrationWarning>{mounted ? (theme === 'light' ? '🌙' : '🌞') : '🌙'}</span>
         </button>
+        <h1 style={{ flex: 1, textAlign: 'center', fontSize: 22, fontWeight: 800, margin: 0 }}>Swipick</h1>
+        <div style={{ width: 36 }} />
       </div>
 
+      {/* 検索 */}
+      <form
+        onSubmit={(e) => { e.preventDefault(); search(q); }}
+        style={{ display: 'flex', gap: 8, width: 360, maxWidth: '100%' }}
+      >
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          enterKeyHint="search"
+          placeholder="例：梅田 居酒屋 / なんば カフェ"
+          style={{ flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 16 }}
+        />
+        <button type="submit" disabled={loading}
+          style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--primary)', color: 'var(--bg)', border: 'none', minWidth: 72, fontWeight: 700 }}>
+          {loading ? '検索中…' : '検索'}
+        </button>
+      </form>
+
+      {/* ジャンルのクイック切り替え */}
+      <div className="hscroll" style={{ width: 360, maxWidth: '100%', display: 'flex', gap: 8, overflowX: 'auto', marginTop: -2 }}>
+        {GENRES.map((g) => (
+          <button key={g} onClick={() => pickGenre(g)} style={chipBase(currentGenre === g)}>{g}</button>
+        ))}
+      </div>
+
+      {/* 絞り込み */}
+      <div style={{ width: 360, maxWidth: '100%' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button onClick={() => setFilterOpen((o) => !o)} style={{ ...chipBase(filterActive), display: 'inline-flex', gap: 6 }}>
+            ⚙ 絞り込み{filterActive ? '（ON）' : ''} {filterOpen ? '▲' : '▼'}
+          </button>
+          <button onClick={() => setFilter('openNow', !filters.openNow)} style={chipBase(filters.openNow)}>
+            営業中のみ
+          </button>
+          {filterActive && (
+            <button onClick={() => setFiltersRaw(DEFAULT_FILTERS)} style={{ ...smallBtn, borderRadius: 999 }}>解除</button>
+          )}
+        </div>
+        {filterOpen && (
+          <div style={{
+            marginTop: 8, padding: 12, borderRadius: 12, background: 'var(--card)', boxShadow: '0 4px 12px var(--elev)',
+            display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, fontSize: 12,
+          }}>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span style={{ color: 'var(--text-muted)' }}>評価</span>
+              <select value={filters.minRating} onChange={(e) => setFilter('minRating', Number(e.target.value))} style={selectStyle}>
+                <option value={0}>指定なし</option>
+                <option value={3.5}>★3.5以上</option>
+                <option value={4}>★4.0以上</option>
+                <option value={4.5}>★4.5以上</option>
+              </select>
+            </label>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span style={{ color: 'var(--text-muted)' }}>価格</span>
+              <select value={filters.price} onChange={(e) => setFilter('price', Number(e.target.value) as Filters['price'])} style={selectStyle}>
+                <option value={0}>指定なし</option>
+                <option value={1}>¥（安め）</option>
+                <option value={2}>¥¥（普通）</option>
+                <option value={3}>¥¥¥〜（高め）</option>
+              </select>
+            </label>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span style={{ color: 'var(--text-muted)' }}>距離</span>
+              <select value={filters.maxDist} onChange={(e) => setFilter('maxDist', Number(e.target.value))} style={selectStyle}>
+                <option value={0}>指定なし</option>
+                <option value={500}>500m以内</option>
+                <option value={1000}>1km以内</option>
+                <option value={3000}>3km以内</option>
+              </select>
+            </label>
+            <div style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              ※ 価格・評価の情報がないお店は、その条件を指定すると表示されません。
+              {filters.maxDist > 0 && !userPos && ' 距離の絞り込みには位置情報の許可が必要です。'}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* エラー */}
       {error && (
-        <div style={{ width:360, maxWidth:'90vw', padding:12, borderRadius:8, background:'rgba(239,68,68,0.12)', color:'var(--text)', border:'1px solid var(--border)' }}>
-          {error}
+        <div role="alert" style={{
+          width: 360, maxWidth: '100%', padding: 12, borderRadius: 10, boxSizing: 'border-box',
+          background: 'rgba(239,68,68,0.12)', color: 'var(--text)', border: '1px solid rgba(239,68,68,0.4)', fontSize: 14,
+        }}>
+          <div style={{ fontWeight: 700 }}>⚠️ {error.message}</div>
+          {error.detail && <div style={{ fontSize: 12, marginTop: 4, color: 'var(--text-muted)', wordBreak: 'break-word' }}>{error.detail}</div>}
+          <button onClick={() => search(q)} style={{ ...smallBtn, marginTop: 8 }}>再試行</button>
         </div>
       )}
 
       {/* スワイプスタック */}
-      <div style={{ position:'relative', width:360, maxWidth:'90vw', height:540 }}>
+      <div style={{ position: 'relative', width: 360, maxWidth: '100%', height: 520 }}>
         {loading && (
           <div style={{
-            position:'absolute', inset:0, borderRadius:16, overflow:'hidden',
-            background:'var(--card)', boxShadow:'0 10px 30px var(--elev)',
-            display:'flex', flexDirection:'column'
+            position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
+            background: 'var(--card)', boxShadow: '0 10px 30px var(--elev)',
+            display: 'flex', flexDirection: 'column',
           }}>
-            <div className="skeleton-hero" style={{ height:'58%', background:'var(--chip)' }} />
-            <div style={{ padding:14 }}>
-              <div className="skeleton-line" style={{ width:'60%', height:18, background:'var(--chip)' }} />
-              <div className="skeleton-line" style={{ width:'40%', height:14, marginTop:8, background:'var(--chip)' }} />
-              <div className="skeleton-line" style={{ width:'50%', height:14, marginTop:8, background:'var(--chip)' }} />
+            <div className="skeleton-hero" style={{ height: '60%', background: 'var(--chip)' }} />
+            <div style={{ padding: 14 }}>
+              <div className="skeleton-line" style={{ width: '60%', height: 18, background: 'var(--chip)' }} />
+              <div className="skeleton-line" style={{ width: '40%', height: 14, marginTop: 8, background: 'var(--chip)' }} />
+              <div className="skeleton-line" style={{ width: '50%', height: 14, marginTop: 8, background: 'var(--chip)' }} />
             </div>
           </div>
         )}
 
-        <AnimatePresence>
-          {visibleRest.slice().reverse().map((c, i) => (
-            <motion.div
-              key={c.id}
-              style={{
-                position:'absolute', inset:0, borderRadius:16, overflow:'hidden',
-                background:'var(--card)', color:'var(--text)', boxShadow:'0 10px 30px var(--elev)',
-                translateY:(i+1)*14, scale:1-(i+1)*0.05, zIndex:100 - i, pointerEvents:'none'
-              }}
-              initial={{ opacity:0, scale:0.95 }}
-              animate={{ opacity:1, scale:1-(i+1)*0.05 }}
-              exit={{ opacity:0, scale:0.95 }}
-            >
-              <div style={{ width:'100%', height:'58%' }}>
-                <AnimatedImage src={c.image} alt={c.name} variant="fade" />
-              </div>
-              <div style={{ padding:14, opacity:0.7 }}>
-                <h2 style={{ margin:0, fontSize:18 }}>{c.name}</h2>
-                <div style={{ color:'var(--text-muted)', fontSize:13 }}>次の候補（写真 {c.photosCount} 枚）</div>
-              </div>
-            </motion.div>
-          ))}
+        <AnimatePresence custom={exitDir}>
+          {!loading && visibleRest.slice().reverse().map((c, i, arr) => {
+            const depth = arr.length - i; // 1 = 2枚目
+            return (
+              <motion.div
+                key={c.id}
+                style={{
+                  position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
+                  background: 'var(--card)', color: 'var(--text)', boxShadow: '0 10px 30px var(--elev)',
+                  translateY: depth * 12, zIndex: 100 - depth, pointerEvents: 'none',
+                }}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 - depth * 0.04 }}
+                exit={{ opacity: 0 }}
+              >
+                <div style={{ width: '100%', height: '60%' }}>
+                  <AnimatedImage src={c.image} alt={c.name} variant="fade" />
+                </div>
+                <div style={{ padding: 14, opacity: 0.7 }}>
+                  <h2 style={{ margin: 0, fontSize: 18 }}>{c.name}</h2>
+                </div>
+              </motion.div>
+            );
+          })}
 
           {top && !loading && (
             <SwipeableCard
               key={top.id}
               card={top}
-              eager
+              userPos={userPos}
               onTapImage={() => nextPhotoWithFetch(top.id)}
-              onSwipeUp={() => { setDetailsPlaceId(top.id); setDetailsOpen(true); }}
-              onSwiped={(dir) => {
-                if (dir === 'right') addFavorite(top);
-                setDeck(prev => prev.slice(1));
-              }}
+              onSwipeUp={() => openDetails(top.id, top.name)}
+              onSwiped={(dir) => handleSwipe(top, dir)}
             />
           )}
         </AnimatePresence>
 
-        {!top && !loading && (
-          <div style={{
-            position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
-            color:'var(--text-muted)', background:'var(--card)', borderRadius:16,
-            textAlign:'center', padding:16, boxShadow:'0 10px 30px var(--elev)'
-          }}>
-            写真のある検索結果は以上です。条件を変えて再検索してください。
-          </div>
-        )}
+        {!top && !loading && renderEmptyState()}
       </div>
 
-      {/* お気に入り：タブ（一覧 / タグ追加） */}
-      <section style={{ width:360, maxWidth:'90vw' }} data-favorites="true">
-        {/* タブヘッダ */}
-        <div style={{ display:'flex', gap:8, marginBottom:10 }}>
-          {(['list','tag-add'] as const).map(k => {
+      {/* 操作ボタン（戻す / NOPE / 詳細 / LIKE） */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 2 }}>
+        <button onClick={undo} disabled={history.length === 0} aria-label="ひとつ戻す" title="ひとつ戻す（Backspace）"
+          style={{ ...actionBtn('#f59e0b', 44), opacity: history.length === 0 ? 0.4 : 1 }}>↺</button>
+        <button onClick={() => top && handleSwipe(top, 'left')} disabled={!top || loading} aria-label="見送る" title="見送る（←）"
+          style={{ ...actionBtn('#ef4444'), opacity: !top || loading ? 0.4 : 1 }}>✕</button>
+        <button onClick={() => top && openDetails(top.id, top.name)} disabled={!top || loading} aria-label="詳細" title="詳細（↑）"
+          style={{ ...actionBtn('#3b82f6', 44), opacity: !top || loading ? 0.4 : 1 }}>i</button>
+        <button onClick={() => top && handleSwipe(top, 'right')} disabled={!top || loading} aria-label="お気に入りに追加" title="お気に入り（→）"
+          style={{ ...actionBtn('#10b981'), opacity: !top || loading ? 0.4 : 1 }}>♥</button>
+      </div>
+
+      {/* 残り件数 */}
+      {stats && !loading && (
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -4 }}>
+          残り {shownDeck.length}件
+          {deck.length !== shownDeck.length && `（絞り込みで${deck.length - shownDeck.length}件非表示）`}
+          {loadingMore && ' ・続きを読み込み中…'}
+          {stats.hidden > 0 && ` ・見送り/保存済み${stats.hidden}件を除外`}
+        </div>
+      )}
+
+      {/* お気に入り：タブ（一覧 / 地図 / タグ追加） */}
+      <section style={{ width: 360, maxWidth: '100%', marginTop: 8 }} data-favorites="true">
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          {(['list', 'map', 'tag-add'] as const).map((k) => {
             const active = favTab === k;
             return (
               <button
                 key={k}
-                onClick={()=> setFavTab(k)}
+                onClick={() => setFavTab(k)}
                 style={{
-                  flex:1, padding:'8px 0', borderRadius:8,
+                  flex: 1, padding: '8px 0', borderRadius: 8,
                   border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
                   background: active ? 'var(--primary)' : 'var(--card)',
-                  color: active ? 'var(--bg)' : 'var(--text)', fontWeight:700
+                  color: active ? 'var(--bg)' : 'var(--text)', fontWeight: 700,
                 }}
               >
-                {k === 'list' ? '一覧' : 'タグ追加'}
+                {k === 'list' ? '一覧' : k === 'map' ? '地図' : 'タグ追加'}
               </button>
             );
           })}
         </div>
 
-        {favTab === 'list' ? (
+        {favTab !== 'tag-add' && (
           <>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                <h2 style={{ margin:0, fontSize:16, fontWeight:700 }}>お気に入り</h2>
-                <span style={{ color:'var(--text-muted)', fontSize:12 }} suppressHydrationWarning>
-                  {mounted ? `${favorites.length} 件` : '0 件'}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>お気に入り</h2>
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }} suppressHydrationWarning>
+                  {mounted ? `${filteredFavorites.length === favorites.length ? '' : `${filteredFavorites.length} / `}${favorites.length} 件` : '0 件'}
                 </span>
               </div>
-              <button
-                onClick={() => setShowGlobalAddBar(s => !s)}
-                style={{ padding:'6px 10px', borderRadius:8, background:'var(--primary)', color:'var(--bg)', border:'none', fontSize:12 }}
-              >
-                タグを追加
-              </button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => shareFavorites(filteredFavorites)} style={smallBtn} title="表示中のお気に入りを共有">
+                  📤 共有
+                </button>
+                <button
+                  onClick={() => setShowGlobalAddBar((s) => !s)}
+                  style={{ ...smallBtn, background: 'var(--primary)', color: 'var(--bg)', border: 'none' }}
+                >
+                  ＋タグ
+                </button>
+              </div>
             </div>
 
             {/* 検索バー */}
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <input
                 value={favFilterText}
-                onChange={e => setFavFilterText(e.target.value)}
+                onChange={(e) => setFavFilterText(e.target.value)}
                 placeholder="お気に入りを検索（名称／住所）"
-                style={{ flex:1, padding:'8px 10px', borderRadius:8, border:'1px solid var(--border)', background:'var(--card)', fontSize:13 }}
+                style={{ flex: 1, minWidth: 0, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 16 }}
               />
+              {favTab === 'list' && (
+                <select value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}
+                  aria-label="並び替え"
+                  style={{ padding: '8px 6px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 14 }}>
+                  <option value="new">新しい順</option>
+                  <option value="rating">評価順</option>
+                  <option value="near">近い順</option>
+                </select>
+              )}
             </div>
 
             {/* 追加バー（トグル） */}
             {showGlobalAddBar && (
-              <div style={{ display:'flex', gap:8, marginBottom:10 }}>
+              <form
+                onSubmit={(e) => { e.preventDefault(); applyGlobalTag(); }}
+                style={{ display: 'flex', gap: 8, marginBottom: 10 }}
+              >
                 <input
                   value={globalTagInput}
-                  onChange={(e)=> setGlobalTagInput(e.target.value)}
-                  placeholder="追加するタグ名（例：海鮮 / ワイン）"
-                  style={{
-                    flex:1, padding:'6px 10px', fontSize:12,
-                    borderRadius:12, border:'1px solid var(--border)', background:'var(--card)'
-                  }}
+                  onChange={(e) => setGlobalTagInput(e.target.value)}
+                  placeholder="作成するタグ名（例：海鮮 / ワイン）"
+                  style={{ flex: 1, minWidth: 0, padding: '8px 10px', fontSize: 16, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)' }}
                 />
                 <button
-                  onClick={applyGlobalTag}
-                  disabled={globalTagInput.trim()===''}
+                  type="submit"
+                  disabled={globalTagInput.trim() === ''}
                   style={{
-                    padding:'6px 10px', borderRadius:12,
-                    background: globalTagInput.trim()==='' ? 'var(--chip)' : 'var(--primary)',
-                    color: globalTagInput.trim()==='' ? 'var(--text-muted)' : 'var(--bg)',
-                    border:'none'
+                    padding: '8px 12px', borderRadius: 10,
+                    background: globalTagInput.trim() === '' ? 'var(--chip)' : 'var(--primary)',
+                    color: globalTagInput.trim() === '' ? 'var(--text-muted)' : 'var(--bg)',
+                    border: 'none',
                   }}
                 >
-                  追加
+                  作成
                 </button>
-              </div>
+              </form>
             )}
 
             {/* タグフィルタチップ（横スクロール1行・件数つき） */}
-            <div style={{ display:'flex', gap:8, flexWrap:'nowrap', overflowX:'auto', paddingBottom:6, marginBottom:4 }}>
-              {existingAllTags.map(t => {
+            <div className="hscroll" style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 6, marginBottom: 4 }}>
+              {existingAllTags.map((t) => {
                 const active = favFilterTags.has(t);
                 return (
                   <button
                     key={t}
-                    onClick={() => setFavFilterTags(prev => {
+                    onClick={() => setFavFilterTags((prev) => {
                       const n = new Set(prev);
                       if (active) n.delete(t); else n.add(t);
                       return n;
                     })}
-                    style={{
-                      flex:'0 0 auto', padding:'6px 12px', borderRadius:999, whiteSpace:'nowrap',
-                      border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
-                      background: active ? 'var(--primary)' : 'var(--card)',
-                      color: active ? 'var(--bg)' : 'var(--text)', fontSize:13, fontWeight:700
-                    }}
+                    style={chipBase(active)}
                   >
                     {t}
-                    <span style={{ marginLeft:6, fontSize:11, opacity:0.7 }}>{tagCounts[t] ?? 0}</span>
+                    <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7 }}>{tagCounts[t] ?? 0}</span>
                   </button>
                 );
               })}
             </div>
 
             {/* 絞り込みの操作行：いずれか／すべて・クリア・タグ管理 */}
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               {favFilterTags.size >= 2 && (
-                <div style={{ display:'flex', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
-                  {(['any','all'] as const).map(m => (
+                <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                  {(['any', 'all'] as const).map((m) => (
                     <button
                       key={m}
                       onClick={() => setFavFilterMode(m)}
                       style={{
-                        padding:'4px 10px', fontSize:12, border:'none',
+                        padding: '4px 10px', fontSize: 12, border: 'none',
                         background: favFilterMode === m ? 'var(--primary)' : 'var(--card)',
-                        color: favFilterMode === m ? 'var(--bg)' : 'var(--text)', fontWeight:700
+                        color: favFilterMode === m ? 'var(--bg)' : 'var(--text)', fontWeight: 700,
                       }}
                     >
                       {m === 'any' ? 'いずれか' : 'すべて含む'}
@@ -967,166 +1489,163 @@ export default function Home() {
                 </div>
               )}
               {favFilterTags.size > 0 && (
-                <button onClick={()=> setFavFilterTags(new Set())}
-                  style={{ padding:'4px 10px', borderRadius:8, background:'var(--chip)', border:'1px solid var(--border)', fontSize:12 }}>
+                <button onClick={() => setFavFilterTags(new Set())} style={{ ...smallBtn, background: 'var(--chip)' }}>
                   クリア
                 </button>
               )}
-              <div style={{ flex:1 }} />
-              <button onClick={()=> setTagManagerOpen(true)}
-                style={{ padding:'4px 10px', borderRadius:8, background:'var(--card)', border:'1px solid var(--border)', fontSize:12 }}>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setTagManagerOpen(true)} style={smallBtn}>
                 タグの管理
               </button>
             </div>
+          </>
+        )}
 
-            {/* 一覧 */}
-            <div style={{ display:'grid', gap:10 }}>
-              {filteredFavorites.length === 0 ? (
-                <div style={{ padding:12, borderRadius:8, background:'var(--card)', color:'var(--text-muted)', fontSize:14, boxShadow:'0 10px 30px var(--elev)' }}>
-                  条件に一致するお気に入りはありません
-                </div>
-              ) : (
-                filteredFavorites.map((f) => (
-                  <div key={f.id} style={{ borderRadius:10, overflow:'hidden', background:'var(--card)', color:'var(--text)', boxShadow:'0 4px 12px var(--elev)' }}>
-                    <div style={{ display:'flex', alignItems:'stretch', height: CARD_IMG_SIZE }}>
-                      {/* 左：画像（タップで詳細） */}
-                      <div onClick={() => { setDetailsPlaceId(f.id); setDetailsOpen(true); }}
-                           style={{ width: CARD_IMG_SIZE, height: CARD_IMG_SIZE, cursor:'pointer', position:'relative' }}>
-                        <AnimatedImage src={f.image} alt={f.name} variant="fade" />
-                      </div>
+        {favTab === 'list' && (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {sortedFavorites.length === 0 ? (
+              <div style={{ padding: 12, borderRadius: 8, background: 'var(--card)', color: 'var(--text-muted)', fontSize: 14, boxShadow: '0 10px 30px var(--elev)' }}>
+                {favorites.length === 0 ? '右にスワイプ（♥）したお店がここに並びます' : '条件に一致するお気に入りはありません'}
+              </div>
+            ) : (
+              sortedFavorites.map((f) => (
+                <div key={f.id} style={{ borderRadius: 12, overflow: 'hidden', background: 'var(--card)', color: 'var(--text)', boxShadow: '0 4px 12px var(--elev)' }}>
+                  <div style={{ display: 'flex', alignItems: 'stretch', minHeight: CARD_IMG_SIZE }}>
+                    {/* 左：画像（タップで詳細） */}
+                    <div onClick={() => openDetails(f.id, f.name)}
+                      style={{ width: CARD_IMG_SIZE, minHeight: CARD_IMG_SIZE, flex: '0 0 auto', cursor: 'pointer', position: 'relative' }}>
+                      <AnimatedImage src={f.image} alt={f.name} variant="fade" />
+                    </div>
 
-                      {/* 中央：本文（タイトルタップで詳細） */}
+                    {/* 右：本文 */}
+                    <div style={{ flex: 1, padding: '8px 10px', minWidth: 0, overflow: 'hidden' }}>
                       <div
-                        onClick={() => { setDetailsPlaceId(f.id); setDetailsOpen(true); }}
-                        style={{ flex:1, padding:'8px 10px', minWidth:0, cursor:'pointer', overflow:'hidden' }}
+                        onClick={() => openDetails(f.id, f.name)}
+                        style={{
+                          fontWeight: 700, lineHeight: 1.25, cursor: 'pointer',
+                          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                        }}
                       >
-                        <div
-                          style={{
-                            fontWeight:700, lineHeight:1.2,
-                            display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden'
-                          }}
-                        >
-                          {f.name}
-                        </div>
-                        <div
-                          style={{
-                            color:'var(--text-muted)', fontSize:12, marginTop:6,
-                            display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden'
-                          }}
-                        >
-                          {f.address ?? ''}
-                        </div>
-                        {/* タグ表示（1行内スクロール可・タップでタグ編集） */}
-                        <div
-                          onClick={(e) => { e.stopPropagation(); setTagSheetFavId(f.id); }}
-                          style={{
-                            display:'flex', gap:6, marginTop:6, overflowX:'auto', whiteSpace:'nowrap'
-                          }}
-                        >
-                          {(f.tags||[]).map(t => (
-                            <span key={t} style={{ padding:'2px 6px', borderRadius:999, background:'var(--chip)', fontSize:11, flex:'0 0 auto' }}>{t}</span>
-                          ))}
-                          {(f.tags||[]).length === 0 && (
-                            <span style={{ padding:'2px 6px', borderRadius:999, border:'1px dashed var(--border)', color:'var(--text-muted)', fontSize:11, flex:'0 0 auto' }}>＋タグを付ける</span>
-                          )}
-                        </div>
+                        {f.name}
                       </div>
-
-                      {/* 右：縦スタック（＋タグ／🗑） */}
-                      <div style={{
-                        width:56, height:CARD_IMG_SIZE, borderLeft:'1px solid var(--border)',
-                        display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'space-between', padding:'8px 6px', boxSizing:'border-box'
-                      }}>
-                        <button
-                          title="このお店のタグを編集"
-                          onClick={() => setTagSheetFavId(f.id)}
-                          style={{
-                            width:'100%', padding:'6px 0', fontSize:12,
-                            border:'1px solid var(--border)', borderRadius:8, background:'var(--card)', color:'var(--text)'
-                          }}
-                        >
-                          🏷 タグ
-                        </button>
-                        <button
-                          onClick={() => deleteFavorite(f.id)}
-                          title="お気に入りから削除"
-                          style={{
-                            width:'100%', padding:'6px 0', fontSize:16,
-                            border:'1px solid var(--border)', borderRadius:8, background:'var(--card)', color:'var(--text)'
-                          }}
-                        >
-                          🗑️
-                        </button>
+                      <div style={{ fontSize: 12, marginTop: 4, color: 'var(--text-muted)' }}>
+                        <MetaLine c={f} pos={userPos} />
+                      </div>
+                      {/* タグ（タップでタグ編集） */}
+                      <div
+                        className="hscroll"
+                        onClick={() => setTagSheetFavId(f.id)}
+                        style={{ display: 'flex', gap: 6, marginTop: 6, overflowX: 'auto', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                      >
+                        {(f.tags || []).map((t) => (
+                          <span key={t} style={{ padding: '2px 8px', borderRadius: 999, background: 'var(--chip)', fontSize: 11, flex: '0 0 auto' }}>{t}</span>
+                        ))}
+                        {(f.tags || []).length === 0 && (
+                          <span style={{ padding: '2px 8px', borderRadius: 999, border: '1px dashed var(--border)', color: 'var(--text-muted)', fontSize: 11, flex: '0 0 auto' }}>＋タグを付ける</span>
+                        )}
                       </div>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          </>
-        ) : (
-          /* タグ追加タブ（追加バーを一番上・小型） */
-          <div style={{ display:'grid', gap:12 }}>
-            {/* 小型追加バー（上） */}
-            <div style={{ display:'flex', gap:8 }}>
+
+                  {/* 行動ボタン */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 44px', borderTop: '1px solid var(--border)' }}>
+                    <a href={mapsDirectionsUrl(f.name, f.id)} target="_blank" rel="noreferrer"
+                      style={{ padding: '9px 0', textAlign: 'center', fontSize: 13, color: 'var(--text)', textDecoration: 'none', borderRight: '1px solid var(--border)' }}>
+                      🚶 経路
+                    </a>
+                    <a href={mapsPlaceUrl(f.name, f.id)} target="_blank" rel="noreferrer"
+                      style={{ padding: '9px 0', textAlign: 'center', fontSize: 13, color: 'var(--text)', textDecoration: 'none', borderRight: '1px solid var(--border)' }}>
+                      🗺 地図
+                    </a>
+                    <button onClick={() => setTagSheetFavId(f.id)}
+                      style={{ padding: '9px 0', fontSize: 13, border: 'none', background: 'transparent', borderRight: '1px solid var(--border)' }}>
+                      🏷 タグ
+                    </button>
+                    <button onClick={() => deleteFavorite(f.id)} aria-label="お気に入りから削除" title="お気に入りから削除"
+                      style={{ padding: '9px 0', fontSize: 14, border: 'none', background: 'transparent' }}>
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {favTab === 'map' && (
+          <FavoritesMap items={mapItems} userPos={userPos} onOpenDetails={openDetailsById} />
+        )}
+
+        {favTab === 'tag-add' && (
+          /* タグ追加タブ（まとめてタグ付け） */
+          <div style={{ display: 'grid', gap: 12 }}>
+            <form onSubmit={(e) => { e.preventDefault(); applyTagToSelected(); }} style={{ display: 'flex', gap: 8 }}>
               <input
                 value={tagInput}
-                onChange={(e)=> setTagInput(e.target.value)}
-                placeholder="追加するタグ名（例：海鮮 / ワイン）"
-                style={{
-                  flex:1, padding:'6px 10px', fontSize:12,
-                  borderRadius:12, border:'1px solid var(--border)', background:'var(--card)'
-                }}
+                onChange={(e) => setTagInput(e.target.value)}
+                placeholder="付けるタグ名（例：海鮮 / ワイン）"
+                style={{ flex: 1, minWidth: 0, padding: '8px 10px', fontSize: 16, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)' }}
               />
               <button
-                onClick={applyTagToSelected}
-                disabled={selectedFavIds.size===0 || tagInput.trim()===''}
+                type="submit"
+                disabled={selectedFavIds.size === 0 || tagInput.trim() === ''}
                 style={{
-                  padding:'6px 10px', borderRadius:12,
-                  background:(selectedFavIds.size===0 || tagInput.trim()==='') ? 'var(--chip)' : 'var(--primary)',
-                  color:(selectedFavIds.size===0 || tagInput.trim()==='') ? 'var(--text-muted)' : 'var(--bg)',
-                  border:'none', minWidth:72
+                  padding: '8px 10px', borderRadius: 10,
+                  background: (selectedFavIds.size === 0 || tagInput.trim() === '') ? 'var(--chip)' : 'var(--primary)',
+                  color: (selectedFavIds.size === 0 || tagInput.trim() === '') ? 'var(--text-muted)' : 'var(--bg)',
+                  border: 'none', minWidth: 72,
                 }}
               >
-                追加
+                付ける
               </button>
+            </form>
+
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ flex: 1 }}>まとめてタグ付けしたいお店を選んで、タグ名を入れて「付ける」。（{selectedFavIds.size}件選択中）</span>
+              {favorites.length > 0 && (
+                <button
+                  onClick={() => setSelectedFavIds(selectedFavIds.size === favorites.length ? new Set() : new Set(favorites.map((f) => f.id)))}
+                  style={smallBtn}
+                >
+                  {selectedFavIds.size === favorites.length ? '全解除' : '全選択'}
+                </button>
+              )}
             </div>
 
-            <div style={{ color:'var(--text-muted)', fontSize:12 }}>
-              まとめてタグ付けしたいお店を選択して、上の入力欄でタグを追加します。
-            </div>
-
-            {/* 既存タグチップ（タップで入力欄に反映） */}
-            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-              {existingAllTags.map(t => (
-                <button key={t} onClick={()=> setTagInput(t)}
-                  style={{ padding:'4px 10px', borderRadius:999, background:'var(--chip)', border:'1px solid var(--border)', fontSize:12 }}>
+            <div className="hscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+              {existingAllTags.map((t) => (
+                <button key={t} onClick={() => setTagInput(t)} style={chipBase(tagInput.trim() === t)}>
                   {t}
                 </button>
               ))}
             </div>
 
-            {/* お気に入り選択グリッド */}
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-              {favorites.map(f => {
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {favorites.map((f) => {
                 const checked = selectedFavIds.has(f.id);
                 return (
                   <label key={f.id} style={{
-                    position:'relative', borderRadius:10, overflow:'hidden', background:'var(--card)', color:'var(--text)', boxShadow:'0 4px 12px var(--elev)', cursor:'pointer'
+                    position: 'relative', borderRadius: 10, overflow: 'hidden', background: 'var(--card)', color: 'var(--text)',
+                    boxShadow: '0 4px 12px var(--elev)', cursor: 'pointer',
+                    outline: checked ? '3px solid var(--primary)' : 'none',
                   }}>
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={(e)=> {
-                        setSelectedFavIds(prev => {
-                          // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-                          const n = new Set(prev); e.target.checked ? n.add(f.id) : n.delete(f.id); return n;
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setSelectedFavIds((prev) => {
+                          const n = new Set(prev);
+                          if (on) n.add(f.id); else n.delete(f.id);
+                          return n;
                         });
                       }}
-                      style={{ position:'absolute', top:8, left:8, zIndex:2 }}
+                      style={{ position: 'absolute', top: 8, left: 8, zIndex: 2, width: 18, height: 18 }}
                     />
-                    <img src={f.image} alt={f.name} style={{ width:'100%', height:96, objectFit:'cover' }} />
-                    <div style={{ padding:8, fontSize:12, fontWeight:700 }}>{f.name}</div>
+                    {f.image
+                      ? <img src={f.image} alt={f.name} style={{ width: '100%', height: 96, objectFit: 'cover', display: 'block' }} />
+                      : <div style={{ height: 96, background: 'var(--chip)' }} />}
+                    <div style={{ padding: 8, fontSize: 12, fontWeight: 700 }}>{f.name}</div>
                   </label>
                 );
               })}
@@ -1135,12 +1654,43 @@ export default function Home() {
         )}
       </section>
 
+      {/* バックアップ */}
+      <section style={{
+        width: 360, maxWidth: '100%', marginTop: 16, padding: 12, borderRadius: 12, boxSizing: 'border-box',
+        background: 'var(--card)', boxShadow: '0 4px 12px var(--elev)', fontSize: 13,
+      }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>データのバックアップ</div>
+        <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6, marginBottom: 10 }}>
+          お気に入りとタグは、この端末のブラウザ内だけに保存されています。機種変更やブラウザのデータ削除の前に書き出しておくと、別の端末で読み込めます。
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={exportBackup} disabled={favorites.length === 0} style={{ ...smallBtn, flex: 1, padding: '8px 10px', opacity: favorites.length === 0 ? 0.5 : 1 }}>
+            ⬇️ 書き出す
+          </button>
+          <button onClick={() => importInputRef.current?.click()} style={{ ...smallBtn, flex: 1, padding: '8px 10px' }}>
+            ⬆️ 読み込む
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importBackup(file);
+              e.target.value = '';
+            }}
+          />
+        </div>
+        {seenIds.length > 0 && (
+          <button onClick={resetSeen} style={{ ...smallBtn, marginTop: 8, width: '100%', padding: '8px 10px' }}>
+            見送り履歴（{seenIds.length}件）をリセット
+          </button>
+        )}
+      </section>
+
       {/* 詳細モーダル */}
-      <DetailsModal
-        open={detailsOpen}
-        onClose={()=>setDetailsOpen(false)}
-        placeId={detailsPlaceId}
-      />
+      <DetailsModal open={detailsOpen} onClose={closeDetails} placeId={detailsPlaceId} fallbackName={detailsName} />
 
       {/* タグ編集シート（お店ごと） */}
       {tagSheetFav && (
@@ -1164,6 +1714,35 @@ export default function Home() {
           onClose={() => setTagManagerOpen(false)}
         />
       )}
+
+      {/* トースト */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            key={toast.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            role="status"
+            style={{
+              position: 'fixed', left: '50%', bottom: 'calc(20px + env(safe-area-inset-bottom))', x: '-50%',
+              zIndex: 6000, background: '#111', color: '#fff', borderRadius: 12,
+              padding: '10px 14px', fontSize: 14, display: 'flex', alignItems: 'center', gap: 12,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.3)', maxWidth: 'calc(100vw - 32px)',
+            }}
+          >
+            <span>{toast.msg}</span>
+            {toast.action && (
+              <button
+                onClick={() => { toast.action?.(); setToast(null); }}
+                style={{ background: 'transparent', border: 'none', color: '#fbbf24', fontWeight: 700, whiteSpace: 'nowrap' }}
+              >
+                {toast.actionLabel ?? '元に戻す'}
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* テーマCSS・スケルトンCSS */}
       <style>{`

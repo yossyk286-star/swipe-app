@@ -1,13 +1,19 @@
 
 // app/api/details/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { guard } from '../_lib/guard';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  // 課金の悪用対策：他サイトからの呼び出し拒否＋IPごとの回数制限（1分40回）
+  const blocked = guard(req, 'details', 40);
+  if (blocked) return blocked;
+
   const { searchParams } = new URL(req.url);
   const placeId = searchParams.get('placeId');
   if (!placeId) return NextResponse.json({ error: 'missing placeId' }, { status: 400 });
+  if (placeId.length > 300) return NextResponse.json({ error: 'invalid placeId' }, { status: 400 });
 
   const key = process.env.GOOGLE_MAPS_API_KEY;
   if (!key) return NextResponse.json({ error: 'server_misconfig' }, { status: 500 });

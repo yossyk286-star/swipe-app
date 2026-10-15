@@ -1,16 +1,28 @@
 // app/api/photo/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { guard } from '../_lib/guard';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  // 課金の悪用対策：他サイトからの読み込み拒否＋IPごとの回数制限（1分300回）
+  const blocked = guard(req, 'photo', 300);
+  if (blocked) return blocked;
+
   const { searchParams } = new URL(req.url);
   const ref = searchParams.get('ref');            // クライアントからは「生のref」を受け取る想定（※二重エンコード回避）
-  const maxwidth = searchParams.get('maxwidth') ?? '1200';
 
   if (!ref) {
     return NextResponse.json({ error: 'missing ref' }, { status: 400 });
   }
+  // 明らかに不正な値は Google に投げない
+  if (ref.length > 2000) {
+    return NextResponse.json({ error: 'invalid ref' }, { status: 400 });
+  }
+
+  // 幅は 100〜1600 に丸める（巨大サイズの要求を防ぐ）
+  const rawWidth = Number.parseInt(searchParams.get('maxwidth') ?? '1200', 10);
+  const maxwidth = String(Number.isFinite(rawWidth) ? Math.min(1600, Math.max(100, rawWidth)) : 1200);
 
   const key = process.env.GOOGLE_MAPS_API_KEY;
   if (!key) {
@@ -39,8 +51,8 @@ export async function GET(req: NextRequest) {
     const res = new NextResponse(upstream.body, {
       headers: {
         'Content-Type': contentType,
-        // ブラウザ/Edgeでキャッシュ可能（必要に応じて調整）
-        'Cache-Control': 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400',
+        // 同じ写真への再リクエスト（＝課金）を減らすため、ブラウザ/Edgeで1日キャッシュ
+        'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=86400',
       },
     });
     return res;

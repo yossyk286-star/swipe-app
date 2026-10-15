@@ -3,53 +3,75 @@
 // app/share/ShareClient.tsx
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-
-type SharedCard = { name: string; image: string };
-
-// Base64 UTF-8 デコード（送信側と形式が合っている前提）
-function fromBase64Utf8(b64: string) {
-  try {
-    return decodeURIComponent(escape(atob(b64)));
-  } catch {
-    return '[]';
-  }
-}
+import {
+  Favorite,
+  STORAGE_KEYS,
+  decodeShare,
+  mapsDirectionsUrl,
+  mapsPlaceUrl,
+} from '../lib/swipick';
 
 export default function ShareClient() {
   const sp = useSearchParams();
   const payload = sp.get('f') || '';
+  const items = useMemo(() => decodeShare(payload), [payload]);
+  const [result, setResult] = useState<string | null>(null);
 
-  const items: SharedCard[] = useMemo(() => {
+  // 自分のお気に入りに取り込む（同じブラウザの localStorage に追加）
+  function importAll() {
     try {
-      const json = fromBase64Utf8(payload);
-      const arr = JSON.parse(json);
-      if (Array.isArray(arr)) {
-        return arr.filter(
-          (x) => x && typeof x.name === 'string' && typeof x.image === 'string'
-        );
+      const raw = localStorage.getItem(STORAGE_KEYS.favorites);
+      const current: Favorite[] = raw ? JSON.parse(raw) : [];
+      const ids = new Set(current.map((f) => f.id));
+      let added = 0;
+      for (const it of items) {
+        if (!it.placeId || ids.has(it.placeId)) continue;
+        current.push({
+          id: it.placeId,
+          name: it.name,
+          image: it.image ?? '',
+          openNow: null,
+          photosCount: 1,
+          photoRefs: it.ref ? [it.ref] : [],
+          currentIdx: 0,
+          address: null,
+          types: [],
+          lat: it.lat ?? null,
+          lng: it.lng ?? null,
+          tags: [],
+          addedAt: Date.now(),
+        });
+        ids.add(it.placeId);
+        added++;
       }
-      return [];
+      localStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify(current));
+      setResult(added > 0 ? `${added}件をお気に入りに追加しました。` : '追加できる新しいお店はありませんでした（すでに登録済み）。');
     } catch {
-      return [];
+      setResult('追加できませんでした。');
     }
-  }, [payload]);
+  }
+
+  const canImport = items.some((it) => !!it.placeId);
 
   return (
     <main
       style={{
         minHeight: '100vh',
         background: '#f5f7fb',
+        color: '#111',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 16,
+        gap: 14,
         padding: 20,
       }}
     >
-      <h1 style={{ fontSize: 22, fontWeight: 700 }}>共有リスト</h1>
-      <p style={{ color: '#555', marginTop: -8 }}>受け取ったお気に入りをまとめて表示</p>
+      <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>共有リスト</h1>
+      <p style={{ color: '#555', margin: 0, fontSize: 14 }}>
+        {items.length > 0 ? `${items.length}件のお店が届きました` : '受け取ったお気に入りをまとめて表示'}
+      </p>
 
       {items.length === 0 ? (
         <div
@@ -67,55 +89,93 @@ export default function ShareClient() {
           送信者にもう一度リンクを作り直してもらってください。
         </div>
       ) : (
-        <ul
-          style={{
-            width: 360,
-            maxWidth: '90vw',
-            listStyle: 'none',
-            padding: 0,
-            margin: 0,
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 10,
-          }}
-        >
-          {items.map((f, idx) => (
-            <li
-              key={`${f.name}-${idx}`}
-              style={{
-                borderRadius: 10,
-                overflow: 'hidden',
-                background: '#fff',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
-              }}
-            >
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                  f.name
-                )}`}
-                target="_blank"
-                rel="noreferrer"
+        <>
+          {canImport && (
+            <div style={{ width: 360, maxWidth: '90vw', display: 'grid', gap: 6 }}>
+              <button
+                onClick={importAll}
                 style={{
-                  color: 'inherit',
-                  textDecoration: 'none',
-                  display: 'block',
+                  padding: '12px 14px', borderRadius: 10, border: 'none',
+                  background: '#111', color: '#fff', fontWeight: 700, fontSize: 15,
                 }}
               >
-                <img
-                  src={f.image}
-                  alt={f.name}
-                  loading="lazy"
-                  style={{ width: '100%', height: 120, objectFit: 'cover' }}
-                />
-                <div style={{ padding: 10, fontSize: 13, fontWeight: 700 }}>
-                  {f.name}
+                ♥ まとめて自分のお気に入りに追加
+              </button>
+              {result && (
+                <div style={{ fontSize: 13, color: '#333', textAlign: 'center' }}>
+                  {result} <a href="/" style={{ color: '#111', fontWeight: 700 }}>Swipickを開く →</a>
                 </div>
-              </a>
-            </li>
-          ))}
-        </ul>
+              )}
+            </div>
+          )}
+
+          <ul
+            style={{
+              width: 360,
+              maxWidth: '90vw',
+              listStyle: 'none',
+              padding: 0,
+              margin: 0,
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 10,
+            }}
+          >
+            {items.map((f, idx) => (
+              <li
+                key={`${f.placeId ?? f.name}-${idx}`}
+                style={{
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  background: '#fff',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <a
+                  href={mapsPlaceUrl(f.name, f.placeId)}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: 'inherit', textDecoration: 'none', display: 'block' }}
+                >
+                  {f.image ? (
+                    <img
+                      src={f.image}
+                      alt={f.name}
+                      loading="lazy"
+                      style={{ width: '100%', height: 120, objectFit: 'cover', display: 'block' }}
+                    />
+                  ) : (
+                    <div style={{ height: 120, background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>🍽</div>
+                  )}
+                  <div style={{ padding: '8px 10px 4px', fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>
+                    {f.name}
+                  </div>
+                </a>
+                <div style={{ display: 'flex', gap: 6, padding: '4px 10px 10px', marginTop: 'auto' }}>
+                  <a
+                    href={mapsDirectionsUrl(f.name, f.placeId)}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: 12, color: '#111', border: '1px solid #ddd', borderRadius: 6, padding: '4px 8px', textDecoration: 'none' }}
+                  >
+                    🚶 経路
+                  </a>
+                  <a
+                    href={mapsPlaceUrl(f.name, f.placeId)}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: 12, color: '#111', border: '1px solid #ddd', borderRadius: 6, padding: '4px 8px', textDecoration: 'none' }}
+                  >
+                    🗺 地図
+                  </a>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </main>
   );
 }
-
