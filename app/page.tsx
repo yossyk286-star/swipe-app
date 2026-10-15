@@ -20,6 +20,8 @@ import {
   Favorite,
   LatLng,
   NAV_HEIGHT,
+  NAV_OFFSET,
+  shortAddress,
   PlaceCard,
   PlaceDetails,
   STORAGE_KEYS,
@@ -44,7 +46,6 @@ const PREFETCH_WHEN_LEFT = 3; // 残りがこの枚数以下になったら続�
 const MAX_SEEN = 1000;        // 見送り履歴の上限
 const MAX_SHARE = 40;         // 共有リンクに含める上限（URLが長くなりすぎないように）
 
-const GENRES = ['居酒屋', 'カフェ', 'ラーメン', '焼肉', '寿司', 'イタリアン', '中華', 'バー', 'ランチ', 'スイーツ'];
 
 type Filters = { openNow: boolean; minRating: number; price: 0 | 1 | 2 | 3; maxDist: number };
 const DEFAULT_FILTERS: Filters = { openNow: false, minRating: 0, price: 0, maxDist: 0 };
@@ -303,7 +304,7 @@ function DetailsModal({
         {!loading && d && (
           <>
             <h2 style={{ margin: '4px 32px 4px 0', fontSize: 20 }}>{name}</h2>
-            <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{d.address}</div>
+            <div className="jp-text" style={{ color: 'var(--text-muted)', fontSize: 13 }}>{shortAddress(d.address)}</div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginTop: 8, fontSize: 14 }}>
               {d.rating != null && (
@@ -538,16 +539,16 @@ function SwipeableCard({
 
       {/* 店名＋評価・価格・距離＋住所 */}
       <div style={{ padding: '12px 14px' }}>
-        <h2 style={{ margin: '0 0 6px', fontSize: 19, lineHeight: 1.3 }}>{card.name}</h2>
+        <h2 className="jp-text jp-title" style={{ margin: '0 0 6px', fontSize: 19, lineHeight: 1.3 }}>{card.name}</h2>
         <div style={{ fontSize: 14, marginBottom: 6 }}>
           <MetaLine c={card} pos={userPos} />
         </div>
         {card.address && (
-          <div style={{
+          <div className="jp-text" style={{
             color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5,
             display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
           }}>
-            📍 {card.address}
+            📍 {shortAddress(card.address)}
           </div>
         )}
       </div>
@@ -727,19 +728,6 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownDeck.length, nextToken, loading]);
 
-  /** ジャンルのクイック切り替え：エリア（最初の語）はそのままジャンルだけ入れ替える */
-  function pickGenre(g: string) {
-    const words = q.trim().split(/\s+/).filter(Boolean);
-    const area = words.length > 0 && !GENRES.includes(words[0]) ? words[0] : '';
-    const nq = area ? `${area} ${g}` : g;
-    setQ(nq);
-    search(nq);
-  }
-  const currentGenre = useMemo(() => {
-    const words = q.trim().split(/\s+/);
-    return GENRES.find((g) => words.includes(g)) ?? null;
-  }, [q]);
-
   /** 画像切替（不足時は Details から補完） */
   async function nextPhotoWithFetch(placeId: string) {
     const card = deck.find((c) => c.id === placeId);
@@ -832,7 +820,8 @@ export default function Home() {
     const removed = favorites[idx];
     setFavorites((prev) => prev.filter((f) => f.id !== id));
     setTagSheetIds((prev) => prev.filter((x) => x !== id));
-    showToast(`「${removed.name}」を削除しました`, '元に戻す', () => {
+    const short = removed.name.length > 12 ? `${removed.name.slice(0, 12)}…` : removed.name;
+    showToast(`「${short}」を削除しました`, '元に戻す', () => {
       setFavorites((prev) => (prev.some((f) => f.id === id) ? prev : [...prev.slice(0, idx), removed, ...prev.slice(idx)]));
     });
   }
@@ -1082,7 +1071,7 @@ export default function Home() {
     <main
       style={{
         minHeight: '100dvh', background: 'var(--bg)', color: 'var(--text)',
-        paddingBottom: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom))`,
+        paddingBottom: NAV_OFFSET,
       }}
     >
       {/* ===== 探す ===== */}
@@ -1113,13 +1102,6 @@ export default function Home() {
           {loading ? '検索中…' : '検索'}
         </button>
       </form>
-
-      {/* ジャンルのクイック切り替え */}
-      <div className="hscroll" style={{ width: 360, maxWidth: '100%', display: 'flex', gap: 8, overflowX: 'auto', marginTop: -2 }}>
-        {GENRES.map((g) => (
-          <button key={g} onClick={() => pickGenre(g)} style={chipBase(currentGenre === g)}>{g}</button>
-        ))}
-      </div>
 
       {/* 絞り込み */}
       <div style={{ width: 360, maxWidth: '100%' }}>
@@ -1323,10 +1305,10 @@ export default function Home() {
         style={{
           position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 3000,
           background: 'var(--card)', borderTop: '1px solid var(--border)',
-          paddingBottom: 'env(safe-area-inset-bottom)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom) * 0.4)',
         }}
       >
-        <div style={{ maxWidth: 560, margin: '0 auto', height: NAV_HEIGHT, display: 'flex' }}>
+        <div style={{ maxWidth: 560, margin: '0 auto', height: NAV_HEIGHT, display: 'flex', justifyContent: 'center' }}>
           {([
             ['search', '探す', 'search'],
             ['saved', '保存済み', 'bookmark'],
@@ -1339,7 +1321,7 @@ export default function Home() {
                 onClick={() => selectTab(key)}
                 aria-current={active ? 'page' : undefined}
                 style={{
-                  flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+                  flex: '0 0 112px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, padding: 0,
                   background: 'transparent', border: 'none',
                   color: active ? 'var(--accent)' : 'var(--text-muted)',
                   fontSize: 12, fontWeight: active ? 700 : 500,
@@ -1396,21 +1378,29 @@ export default function Home() {
             exit={{ opacity: 0, y: 20 }}
             role="status"
             style={{
-              position: 'fixed', left: '50%', bottom: `calc(${NAV_HEIGHT + 16}px + env(safe-area-inset-bottom))`, x: '-50%',
-              zIndex: 6000, background: '#111', color: '#fff', borderRadius: 12,
-              padding: '10px 14px', fontSize: 14, display: 'flex', alignItems: 'center', gap: 12,
-              boxShadow: '0 8px 24px rgba(0,0,0,0.3)', maxWidth: 'calc(100vw - 32px)',
+              position: 'fixed', left: 0, right: 0, bottom: `calc(${NAV_OFFSET} + 12px)`,
+              zIndex: 6000, display: 'flex', justifyContent: 'center', padding: '0 12px',
+              pointerEvents: 'none',
             }}
           >
-            <span>{toast.msg}</span>
-            {toast.action && (
-              <button
-                onClick={() => { toast.action?.(); setToast(null); }}
-                style={{ background: 'transparent', border: 'none', color: '#fbbf24', fontWeight: 700, whiteSpace: 'nowrap' }}
-              >
-                {toast.actionLabel ?? '元に戻す'}
-              </button>
-            )}
+            <div
+              style={{
+                pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 16,
+                width: 'fit-content', maxWidth: 'min(520px, 100%)', boxSizing: 'border-box',
+                background: '#222', color: '#fff', borderRadius: 12, padding: '12px 16px',
+                fontSize: 14, lineHeight: 1.4, boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+              }}
+            >
+              <span className="jp-text" style={{ flex: 1, minWidth: 0 }}>{toast.msg}</span>
+              {toast.action && (
+                <button
+                  onClick={() => { toast.action?.(); setToast(null); }}
+                  style={{ flex: '0 0 auto', background: 'transparent', border: 'none', color: '#8ab4f8', fontWeight: 700, whiteSpace: 'nowrap', padding: '4px 2px' }}
+                >
+                  {toast.actionLabel ?? '元に戻す'}
+                </button>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
