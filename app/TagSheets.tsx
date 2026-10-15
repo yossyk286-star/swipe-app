@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { TAG_ICON_CHOICES } from './lib/swipick';
 
 /** ------------ 共通スタイル ------------ */
 const overlayStyle: React.CSSProperties = {
@@ -73,6 +74,7 @@ function isEnterToSubmit(e: React.KeyboardEvent<HTMLInputElement>) {
 export function TagSheet({
   title,
   allTags,
+  icons = {},
   activeTags,
   onToggle,
   onCreate,
@@ -80,6 +82,7 @@ export function TagSheet({
 }: {
   title: string;
   allTags: string[];
+  icons?: Record<string, string>;
   activeTags: string[];
   onToggle: (tag: string) => void;
   onCreate: (tag: string) => void;
@@ -148,6 +151,7 @@ export function TagSheet({
                 style={chipStyle(activeTags.includes(t))}
               >
                 {activeTags.includes(t) ? '✓ ' : ''}
+                {icons[t] ? `${icons[t]} ` : ''}
                 {t}
               </button>
             ))}
@@ -162,18 +166,23 @@ export function TagSheet({
 export function TagManager({
   tags,
   counts,
+  icons = {},
+  onIcon,
   onRename,
   onDelete,
   onClose,
 }: {
   tags: string[];
   counts: Record<string, number>;
+  icons?: Record<string, string>;
+  onIcon?: (tag: string, icon: string | null) => void;
   onRename: (oldName: string, newName: string) => void;
   onDelete: (tag: string) => void;
   onClose: () => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [pickingIcon, setPickingIcon] = useState<string | null>(null);
 
   const startEdit = (t: string) => {
     setEditing(t);
@@ -212,14 +221,27 @@ export function TagManager({
               <div
                 key={t}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
                   padding: '8px 10px',
                   borderRadius: 10,
                   border: '1px solid var(--border)',
                 }}
               >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {onIcon && (
+                  <button
+                    onClick={() => setPickingIcon((cur) => (cur === t ? null : t))}
+                    aria-label={`${t} のアイコンを変える`}
+                    aria-expanded={pickingIcon === t}
+                    style={{
+                      flex: '0 0 auto', width: 40, height: 40, borderRadius: 20, fontSize: 20, padding: 0,
+                      border: pickingIcon === t ? '2px solid var(--accent)' : '1px solid var(--border)',
+                      background: 'var(--chip)', color: 'var(--text-muted)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    {icons[t] ?? '🏷️'}
+                  </button>
+                )}
                 {editing === t ? (
                   <>
                     <input
@@ -254,6 +276,30 @@ export function TagManager({
                     </button>
                   </>
                 )}
+              </div>
+              {onIcon && pickingIcon === t && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4 }}>
+                    {TAG_ICON_CHOICES.map((ic) => (
+                      <button
+                        key={ic}
+                        onClick={() => { onIcon(t, ic); setPickingIcon(null); }}
+                        aria-label={`アイコン ${ic}`}
+                        style={{
+                          aspectRatio: '1 / 1', fontSize: 20, padding: 0, borderRadius: 8,
+                          border: icons[t] === ic ? '2px solid var(--accent)' : '1px solid transparent',
+                          background: icons[t] === ic ? 'var(--accent-bg)' : 'transparent',
+                        }}
+                      >
+                        {ic}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => { onIcon(t, null); setPickingIcon(null); }} style={{ ...subBtn, marginTop: 8 }}>
+                    アイコンをもとに戻す
+                  </button>
+                </div>
+              )}
               </div>
             ))}
           </div>

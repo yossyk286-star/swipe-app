@@ -647,6 +647,7 @@ export default function Home() {
   const [favorites, setFavorites, favLoaded] = usePersistent<Favorite[]>(STORAGE_KEYS.favorites, []);
   const [userTags, setUserTags] = usePersistent<string[]>(STORAGE_KEYS.tags, ['カフェ', '居酒屋', 'バー']);
   const [seenIds, setSeenIds, seenLoaded] = usePersistent<string[]>(STORAGE_KEYS.seen, []);
+  const [tagIcons, setTagIcons] = usePersistent<Record<string, string>>(STORAGE_KEYS.tagIcons, {});
   const [prefsRaw, setPrefs] = usePersistent<Prefs>(STORAGE_KEYS.prefs, DEFAULT_PREFS);
   const prefs: Prefs = useMemo(() => ({ ...DEFAULT_PREFS, ...prefsRaw }), [prefsRaw]);
   const prefsRef = useRef<Prefs>(prefs);
@@ -1003,6 +1004,11 @@ export default function Home() {
         : f
     ));
     setUserTags((prev) => Array.from(new Set(prev.map((t) => (t === oldName ? n : t)))));
+    setTagIcons((prev) => {
+      if (!(oldName in prev)) return prev;
+      const { [oldName]: ic, ...rest } = prev;
+      return n in rest ? rest : { ...rest, [n]: ic };
+    });
     setMapTag((prev) => (prev === oldName ? n : prev));
   }
   function deleteTag(tag: string) {
@@ -1010,6 +1016,11 @@ export default function Home() {
       (f.tags || []).includes(tag) ? { ...f, tags: f.tags.filter((t) => t !== tag) } : f
     ));
     setUserTags((prev) => prev.filter((t) => t !== tag));
+    setTagIcons((prev) => {
+      if (!(tag in prev)) return prev;
+      const { [tag]: _removed, ...rest } = prev; // eslint-disable-line @typescript-eslint/no-unused-vars
+      return rest;
+    });
     setMapTag((prev) => (prev === tag ? null : prev));
   }
 
@@ -1442,6 +1453,7 @@ export default function Home() {
         <SavedView
           favorites={favorites}
           allTags={existingAllTags}
+          tagIcons={tagIcons}
           tagCounts={tagCounts}
           userPos={userPos}
           onOpenDetails={openDetails}
@@ -1487,7 +1499,7 @@ export default function Home() {
           <div className="hscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 12 }}>
             <button onClick={() => setMapTag(null)} style={accentChip(effMapTag === null)}>すべて</button>
             {existingAllTags.map((t) => (
-              <button key={t} onClick={() => setMapTag(t)} style={accentChip(effMapTag === t)}>{t}</button>
+              <button key={t} onClick={() => setMapTag(t)} style={accentChip(effMapTag === t)}>{tagIcons[t] ? `${tagIcons[t]} ` : ''}{t}</button>
             ))}
           </div>
           <FavoritesMap
@@ -1555,6 +1567,7 @@ export default function Home() {
         <TagSheet
           title={sheetFavs.length === 1 ? sheetFavs[0].name : `${sheetFavs.length}件のお店`}
           allTags={existingAllTags}
+          icons={tagIcons}
           activeTags={sheetActiveTags}
           onToggle={(t) => toggleTagOn(tagSheetIds, t)}
           onCreate={(t) => createTagOn(tagSheetIds, t)}
@@ -1567,6 +1580,14 @@ export default function Home() {
         <TagManager
           tags={existingAllTags}
           counts={tagCounts}
+          icons={tagIcons}
+          onIcon={(tag, ic) => setTagIcons((prev) => {
+            if (ic === null) {
+              const { [tag]: _removed, ...rest } = prev; // eslint-disable-line @typescript-eslint/no-unused-vars
+              return rest;
+            }
+            return { ...prev, [tag]: ic };
+          })}
           onRename={renameTag}
           onDelete={deleteTag}
           onClose={() => setTagManagerOpen(false)}

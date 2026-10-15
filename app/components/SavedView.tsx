@@ -130,6 +130,7 @@ function SearchBox({
 
 function ListRow({
   icon,
+  emoji,
   color,
   title,
   sub,
@@ -137,6 +138,7 @@ function ListRow({
   tonal,
 }: {
   icon: 'heart' | 'label' | 'plus';
+  emoji?: string;
   color: string;
   title: string;
   sub?: string;
@@ -171,7 +173,7 @@ function ListRow({
           flex: '0 0 auto',
         }}
       >
-        <Icon name={icon} size={20} />
+        {emoji ? <span style={{ fontSize: 20, lineHeight: 1 }}>{emoji}</span> : <Icon name={icon} size={20} />}
       </span>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'block', fontSize: 16, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -193,7 +195,9 @@ function PlaceRow({
   onOpen,
   onEditTags,
   onDelete,
+  tagIcons,
 }: {
+  tagIcons: Record<string, string>;
   f: Favorite;
   pos: LatLng | null;
   selectMode: boolean;
@@ -286,7 +290,7 @@ function PlaceRow({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {t}
+                  {tagIcons[t] ? `${tagIcons[t]} ` : ''}{t}
                 </span>
               ))}
             </div>
@@ -347,6 +351,7 @@ function PlaceRow({
 export type SavedViewProps = {
   favorites: Favorite[];
   allTags: string[];
+  tagIcons?: Record<string, string>;
   tagCounts: Record<string, number>;
   userPos: LatLng | null;
   onOpenDetails: (id: string, name?: string) => void;
@@ -361,7 +366,7 @@ export type SavedViewProps = {
 
 export default function SavedView(props: SavedViewProps) {
   const {
-    favorites, allTags, tagCounts, userPos,
+    favorites, allTags, tagIcons = {}, tagCounts, userPos,
     onOpenDetails, onEditTags, onDelete, onShare, onShowOnMap, onCreateTag, onManageTags,
     onGoSearch,
   } = props;
@@ -456,6 +461,7 @@ export default function SavedView(props: SavedViewProps) {
             onOpen={() => onOpenDetails(f.id, f.name)}
             onEditTags={() => onEditTags([f.id])}
             onDelete={() => onDelete(f.id)}
+            tagIcons={tagIcons}
           />
         ))
       )}
@@ -481,7 +487,7 @@ export default function SavedView(props: SavedViewProps) {
               display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto',
             }}
           >
-            <Icon name={isAll ? 'heart' : 'label'} size={18} />
+            {!isAll && tagIcons[openTag] ? <span style={{ fontSize: 17, lineHeight: 1 }}>{tagIcons[openTag]}</span> : <Icon name={isAll ? 'heart' : 'label'} size={18} />}
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -617,6 +623,7 @@ export default function SavedView(props: SavedViewProps) {
             <ListRow
               key={t}
               icon="label"
+              emoji={tagIcons[t]}
               color={tagColor(t)}
               title={t}
               sub={`${tagCounts[t] ?? 0}件の場所`}
