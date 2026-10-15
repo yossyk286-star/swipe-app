@@ -6,7 +6,7 @@
 //   ① タグの一覧（あなたのタグ）  ② タグを開いた中身（お店の一覧）
 // タグは Google マップの「リスト」に当たる。
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Favorite,
   LatLng,
@@ -380,24 +380,37 @@ export default function SavedView(props: SavedViewProps) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
 
-  // 左にスワイプで、ひとつ上の階層（タグの一覧）へ戻る
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
-  const swipeBackProps = {
-    onTouchStart: (e: React.TouchEvent) => {
-      const el = e.target as Element;
-      // 横スクロールの行・入力欄の上から始めたスワイプは対象外
-      if (el.closest?.('.hscroll, input, textarea, select')) { touchStart.current = null; return; }
-      touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    },
-    onTouchEnd: (e: React.TouchEvent) => {
-      const st = touchStart.current;
-      touchStart.current = null;
-      if (!st) return;
-      const dx = e.changedTouches[0].clientX - st.x;
-      const dy = e.changedTouches[0].clientY - st.y;
-      if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.8) goList(null);
-    },
-  };
+  // 右にスワイプで、ひとつ上の階層（タグの一覧）へ戻る
+  // （画面の左端から始めたスワイプは、ブラウザ自身の「戻る」操作なので対象外）
+  useEffect(() => {
+    if (openList === null) return;
+    let st: { x: number; y: number } | null = null;
+    const onStart = (e: TouchEvent) => {
+      const el = e.target as Element | null;
+      const t = e.touches[0];
+      if (!el || !t || !el.closest?.('#tab-scroller') || el.closest('.hscroll, input, textarea, select') || t.clientX < 24) {
+        st = null;
+        return;
+      }
+      st = { x: t.clientX, y: t.clientY };
+    };
+    const onEnd = (e: TouchEvent) => {
+      const s0 = st;
+      st = null;
+      const t = e.changedTouches[0];
+      if (!s0 || !t) return;
+      const dx = t.clientX - s0.x;
+      const dy = t.clientY - s0.y;
+      if (dx > 70 && dx > Math.abs(dy) * 1.8) goList(null);
+    };
+    document.addEventListener('touchstart', onStart, { passive: true });
+    document.addEventListener('touchend', onEnd, { passive: true });
+    return () => {
+      document.removeEventListener('touchstart', onStart);
+      document.removeEventListener('touchend', onEnd);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openList]);
 
   // 開いているタグが削除・名前変更で無くなったら一覧に戻す
   const openTag = openList !== null && openList !== ALL_LIST && !allTags.includes(openList) ? null : openList;
@@ -495,7 +508,7 @@ export default function SavedView(props: SavedViewProps) {
     const color = isAll ? '#ea4335' : tagColor(openTag);
 
     return (
-      <div {...swipeBackProps} style={{ minHeight: 'calc(100dvh - 160px)' }}>
+      <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button onClick={() => goList(null)} aria-label="戻る" style={roundBtn}>
             <Icon name="back" />
