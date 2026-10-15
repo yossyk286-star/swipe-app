@@ -683,6 +683,7 @@ export default function Home() {
     try {
       setError(null);
       setLoading(true);
+      setExitDir(null); // 前回のスワイプ方向で古いカードが飛んでいかないように
       abortRef.current?.abort();
       abortRef.current = new AbortController();
 
