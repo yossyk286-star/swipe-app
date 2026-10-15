@@ -240,6 +240,9 @@ function DetailsModal({
 }: { open: boolean; onClose: () => void; placeId: string; fallbackName?: string }) {
   const [loading, setLoading] = useState(false);
   const [d, setD] = useState<PlaceDetails | null>(null);
+  // 写真の拡大表示（表示中の写真の番号。null=閉じている）
+  const [zoomIdx, setZoomIdx] = useState<number | null>(null);
+  const touchX = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open || !placeId) return;
@@ -247,6 +250,7 @@ function DetailsModal({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setD(null);
+    setZoomIdx(null);
     fetchDetails(placeId)
       .then((res) => { if (!cancelled) setD(res); })
       .catch(() => { if (!cancelled) setD(null); })
@@ -254,13 +258,23 @@ function DetailsModal({
     return () => { cancelled = true; };
   }, [open, placeId]);
 
-  // Esc で閉じる
+  const photoCount = Math.min(6, d?.photoRefs?.length ?? 0);
+  const stepZoom = useCallback((delta: number) => {
+    setZoomIdx((cur) => (cur === null || photoCount === 0 ? cur : (cur + delta + photoCount) % photoCount));
+  }, [photoCount]);
+
+  // Esc で閉じる（拡大表示中は拡大だけ閉じる）／拡大中は ← → で写真を切り替え
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (zoomIdx !== null) setZoomIdx(null); else onClose();
+      } else if (zoomIdx !== null && e.key === 'ArrowRight') stepZoom(1);
+      else if (zoomIdx !== null && e.key === 'ArrowLeft') stepZoom(-1);
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, zoomIdx, stepZoom]);
 
   if (!open) return null;
 
@@ -371,7 +385,8 @@ function DetailsModal({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
                   {d.photoRefs.slice(0, 6).map((ref, i) => (
                     <img key={ref} src={photoUrl(ref, 600)} alt={`${name} の写真 ${i + 1}`} loading="lazy"
-                      style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8 }} />
+                      onClick={() => setZoomIdx(i)}
+                      style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, cursor: 'zoom-in' }} />
                   ))}
                 </div>
               </>
@@ -380,6 +395,65 @@ function DetailsModal({
         )}
         {!loading && !d && <div style={{ padding: '24px 0' }}>情報を取得できませんでした。少し待ってから開き直してください。</div>}
       </div>
+
+      {/* 写真の拡大表示 */}
+      {zoomIdx !== null && d?.photoRefs?.[zoomIdx] && (
+        <div
+          role="dialog"
+          aria-label="写真の拡大表示"
+          onClick={(e) => { e.stopPropagation(); setZoomIdx(null); }}
+          onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
+          onTouchEnd={(e) => {
+            const sx = touchX.current;
+            touchX.current = null;
+            if (sx === null) return;
+            const dx = e.changedTouches[0].clientX - sx;
+            if (Math.abs(dx) > 50) stepZoom(dx < 0 ? 1 : -1);
+          }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 5000, background: 'rgba(0,0,0,0.94)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <img
+            src={photoUrl(d.photoRefs[zoomIdx], 1200)}
+            alt={`${name} の写真 ${zoomIdx + 1}`}
+            style={{ maxWidth: '100vw', maxHeight: '100dvh', objectFit: 'contain', display: 'block' }}
+          />
+          <button
+            onClick={(e) => { e.stopPropagation(); setZoomIdx(null); }}
+            aria-label="閉じる"
+            style={{
+              position: 'absolute', top: 'max(12px, env(safe-area-inset-top))', right: 12, width: 44, height: 44, borderRadius: 22,
+              background: 'rgba(255,255,255,0.18)', border: 'none', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Icon name="close" size={24} />
+          </button>
+          {photoCount > 1 && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); stepZoom(-1); }}
+                aria-label="前の写真"
+                style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%) scaleX(-1)', width: 44, height: 44, borderRadius: 22, background: 'rgba(255,255,255,0.18)', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Icon name="chevronRight" size={26} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); stepZoom(1); }}
+                aria-label="次の写真"
+                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 44, height: 44, borderRadius: 22, background: 'rgba(255,255,255,0.18)', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Icon name="chevronRight" size={26} />
+              </button>
+              <div style={{ position: 'absolute', bottom: 'max(16px, env(safe-area-inset-bottom))', left: 0, right: 0, textAlign: 'center', color: '#fff', fontSize: 13 }}>
+                {zoomIdx + 1} / {photoCount}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
