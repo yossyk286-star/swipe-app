@@ -375,6 +375,7 @@ export default function SavedView(props: SavedViewProps) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortMode>('new');
   const [rating4, setRating4] = useState(false);
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
@@ -420,6 +421,7 @@ export default function SavedView(props: SavedViewProps) {
     setOpenList(id);
     setQuery('');
     setRating4(false);
+    setTagFilter([]);
     setSelectMode(false);
     setSelected(new Set());
     setCreating(false);
@@ -431,7 +433,8 @@ export default function SavedView(props: SavedViewProps) {
     if (openTag === null) {
       arr = searching ? favorites : [];
     } else if (openTag === ALL_LIST) {
-      arr = favorites;
+      const act = tagFilter.filter((t) => allTags.includes(t));
+      arr = act.length > 0 ? favorites.filter((f) => act.every((t) => f.tags?.includes(t))) : favorites;
     } else {
       const tag = openTag;
       arr = favorites.filter((f) => f.tags?.includes(tag));
@@ -454,7 +457,7 @@ export default function SavedView(props: SavedViewProps) {
       const db = distanceTo(userPos, b.lat, b.lng);
       return (da ?? Infinity) - (db ?? Infinity);
     });
-  }, [favorites, openTag, searching, query, rating4, sort, userPos]);
+  }, [favorites, openTag, searching, query, rating4, sort, userPos, tagFilter, allTags]);
 
   const selectedVisible = rows.filter((f) => selected.has(f.id)).map((f) => f.id);
 
@@ -570,10 +573,32 @@ export default function SavedView(props: SavedViewProps) {
           <button onClick={() => setRating4((v) => !v)} style={chip(rating4)}>★4.0以上</button>
         </div>
 
+        {isAll && allTags.length > 0 && (
+          <div className="hscroll" style={{ display: 'flex', gap: 8, margin: '8px 0 2px', overflowX: 'auto' }}>
+            <span style={{ flex: '0 0 auto', alignSelf: 'center', fontSize: 12, color: 'var(--text-muted)' }}>タグ</span>
+            {allTags.map((t) => {
+              const on = tagFilter.includes(t);
+              return (
+                <button
+                  key={t}
+                  onClick={() => setTagFilter((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]))}
+                  style={chip(on)}
+                  aria-pressed={on}
+                >
+                  {t}{tagCounts[t] ? ` ${tagCounts[t]}` : ''}
+                </button>
+              );
+            })}
+            {tagFilter.length > 0 && (
+              <button onClick={() => setTagFilter([])} style={pillBase}>解除</button>
+            )}
+          </div>
+        )}
+
         {renderRows(
           favorites.length === 0
             ? 'まだお気に入りがありません。'
-            : (query.trim() || rating4)
+            : (query.trim() || rating4 || tagFilter.length > 0)
               ? '条件に合うお店がありません。'
               : 'このタグのお店はまだありません。お店の「タグ」ボタンから追加できます。'
         )}

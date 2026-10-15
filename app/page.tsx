@@ -851,7 +851,7 @@ export default function Home() {
       const { cards, nextPageToken } = await fetchPlaces(params, abortRef.current.signal);
       if (myId !== searchIdRef.current) return;
 
-      const items = orderCards(toCards(cards, prefsRef.current.showNoPhoto), prefsRef.current.shuffle);
+      const items = orderCards(toCards(cards, prefsRef.current.showNoPhoto), true);
       const ex = excludedIds();
       const fresh = items.filter((c) => !ex.has(c.id));
 
@@ -911,7 +911,7 @@ export default function Home() {
         expansionsRef.current = expansionsRef.current.slice(1);
         setExpandLeft(expansionsRef.current.length);
       }
-      const items = orderCards(toCards(cards, prefsRef.current.showNoPhoto), prefsRef.current.shuffle);
+      const items = orderCards(toCards(cards, prefsRef.current.showNoPhoto), true);
       const ex = excludedIds();
       setDeck((prev) => {
         const ids = new Set(prev.map((c) => c.id));
@@ -1167,8 +1167,9 @@ export default function Home() {
         priceLabel(f.priceLevel),
         formatDistance(distanceTo(userPos, f.lat, f.lng)),
       ].filter(Boolean).join(' · ');
-      return { id: f.id, name: f.name, lat: f.lat as number, lng: f.lng as number, sub, href: mapsPlaceUrl(f.name, f.id) };
-    }), [mapFavorites, userPos]);
+      const tagForIcon = (f.tags || []).find((t) => tagIcons[t]);
+      return { id: f.id, name: f.name, lat: f.lat as number, lng: f.lng as number, sub, href: mapsPlaceUrl(f.name, f.id), emoji: tagForIcon ? tagIcons[tagForIcon] : undefined };
+    }), [mapFavorites, userPos, tagIcons]);
   const openDetailsById = useCallback((id: string) => openDetails(id), [openDetails]);
 
   function selectTab(next: MainTab) {
@@ -1389,12 +1390,9 @@ export default function Home() {
           <button onClick={() => { setFilterOpen((o) => !o); setTagPickOpen(false); }} style={{ ...chipBase(filterActive), display: 'inline-flex', gap: 6 }}>
             絞り込み{filterActive ? '（ON）' : ''} {filterOpen ? '▲' : '▼'}
           </button>
-          <button onClick={() => setFilter('openNow', !filters.openNow)} style={chipBase(filters.openNow)}>
-            営業中のみ
-          </button>
           <button onClick={() => { setTagPickOpen((o) => !o); setFilterOpen(false); }}
             style={{ ...chipBase(activeAutoTags.length > 0), display: 'inline-flex', gap: 4, minWidth: 0 }}>
-            🏷 {activeAutoTags.length === 0 ? '自動タグ' : activeAutoTags.length === 1 ? activeAutoTags[0] : `${activeAutoTags[0]} +${activeAutoTags.length - 1}`}
+            {activeAutoTags.length === 0 ? '自動タグ' : activeAutoTags.length === 1 ? activeAutoTags[0] : `${activeAutoTags[0]} +${activeAutoTags.length - 1}`}
           </button>
           {filterActive && (
             <button onClick={() => setFiltersRaw(DEFAULT_FILTERS)} style={{ ...smallBtn, borderRadius: 999 }}>解除</button>
@@ -1435,6 +1433,12 @@ export default function Home() {
             width: 360, maxWidth: 'calc(100% - 32px)', marginInline: 'auto', boxSizing: 'border-box', padding: 12, borderRadius: 12, background: 'var(--card)', boxShadow: '0 4px 12px var(--elev)',
             display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, fontSize: 12,
           }}>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <button onClick={() => setFilter('openNow', !filters.openNow)} aria-pressed={filters.openNow}
+                style={{ ...chipBase(filters.openNow), display: 'inline-flex', gap: 6 }}>
+                営業中のみ{filters.openNow ? ' ✓' : ''}
+              </button>
+            </div>
             <label style={{ display: 'grid', gap: 4 }}>
               <span style={{ color: 'var(--text-muted)' }}>評価</span>
               <select value={filters.minRating} onChange={(e) => setFilter('minRating', Number(e.target.value))} style={selectStyle}>

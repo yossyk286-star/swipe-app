@@ -147,7 +147,9 @@ export default function GoogleMapView({
     };
 
     for (const it of items) {
-      const pin = new lib.PinElement({ background: '#ea4335', borderColor: '#b31412', glyphColor: '#fff' });
+      const pin = new lib.PinElement(it.emoji
+        ? { background: '#ea4335', borderColor: '#b31412', glyph: it.emoji, scale: 1.4 }
+        : { background: '#ea4335', borderColor: '#b31412', glyphColor: '#fff' });
       const m = new lib.AdvancedMarkerElement({
         map,
         position: { lat: it.lat, lng: it.lng },

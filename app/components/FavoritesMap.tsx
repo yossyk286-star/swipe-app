@@ -15,6 +15,7 @@ export type MapItem = {
   lng: number;
   sub?: string;
   href: string;
+  emoji?: string; // ピンに表示するタグのアイコン
 };
 
 const LEAFLET_VERSION = '1.9.4';
@@ -104,13 +105,31 @@ function LeafletMap({
     const bounds: [number, number][] = [];
 
     for (const it of items) {
-      const marker = L.circleMarker([it.lat, it.lng], {
-        radius: 9,
-        color: '#ffffff',
-        weight: 2,
-        fillColor: '#ef4444',
-        fillOpacity: 0.95,
-      });
+      const marker = it.emoji
+        ? L.marker([it.lat, it.lng], {
+            title: it.name,
+            icon: L.divIcon({
+              className: '',
+              html: '<div style="width:34px;height:34px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#ef4444;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center"><span style="transform:rotate(45deg);font-size:17px;line-height:1"></span></div>',
+              iconSize: [34, 34],
+              iconAnchor: [4, 34],
+              popupAnchor: [13, -30],
+            }),
+          })
+        : L.circleMarker([it.lat, it.lng], {
+            radius: 9,
+            color: '#ffffff',
+            weight: 2,
+            fillColor: '#ef4444',
+            fillOpacity: 0.95,
+          });
+      if (it.emoji) {
+        // 絵文字は textContent で入れる（外部入力を innerHTML に入れない）
+        marker.once?.('add', () => {
+          const span = marker.getElement?.()?.querySelector('span');
+          if (span) span.textContent = it.emoji as string;
+        });
+      }
 
       // 店名は外部データなので innerHTML は使わず DOM で組み立てる
       const box = document.createElement('div');
