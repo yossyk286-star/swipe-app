@@ -45,6 +45,14 @@ const SWIPE_THRESHOLD = 120;
 const VISIBLE_STACK = 3;
 const CARD_IMG_SIZE = 88;
 const PREFETCH_WHEN_LEFT = 3; // 残りがこの枚数以下になったら続きを取得
+const EXPAND_WHEN_LEFT = 6;   // 60件を使い切りそうなとき、近い言葉で検索し直して足す
+const EXPAND_SUFFIXES = ['おすすめ', '人気', '個室', '安い', '駅近', 'おしゃれ', '深夜', 'ランチ', 'ディナー', '隠れ家'];
+
+/** 1回の検索（最大60件）を超えて出すための、近い言葉での追加検索 */
+function buildExpansions(base: string): string[] {
+  const lower = base.toLowerCase();
+  return EXPAND_SUFFIXES.filter((w) => !lower.includes(w)).slice(0, 8).map((w) => `${base} ${w}`);
+}
 const MAX_SEEN = 1000;        // 見送り履歴の上限
 const MAX_SHARE = 40;         // 共有リンクに含める上限（URLが長くなりすぎないように）
 
@@ -705,6 +713,8 @@ export default function Home() {
   const [error, setError] = useState<ErrorInfo | null>(null);
   const [deck, setDeck] = useState<PlaceCard[]>([]);
   const [nextToken, setNextToken] = useState<string | null>(null);
+  const expansionsRef = useRef<string[]>([]);   // これから足す追加検索の言葉
+  const [expandLeft, setExpandLeft] = useState(0);
   const [stats, setStats] = useState<SearchStats | null>(null);
   const [userPos, setUserPos] = useState<LatLng | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -834,6 +844,8 @@ export default function Home() {
 
       setDeck(fresh);
       setNextToken(nextPageToken);
+      expansionsRef.current = buildExpansions(trimmed);
+      setExpandLeft(expansionsRef.current.length);
       setStats({ query: trimmed, raw: cards.length, withPhoto: items.length, hidden: items.length - fresh.length });
       setHistory([]);
     } catch (e) {
@@ -862,13 +874,30 @@ export default function Home() {
 
   /** 続きのページ（最大60件まで） */
   async function loadMore() {
-    if (!nextToken || loadingMoreRef.current) return;
+    if (loadingMoreRef.current) return;
+    // 続きのページがなければ、近い言葉での追加検索を1つ進める
+    let params: URLSearchParams | null = null;
+    let expandedQuery: string | null = null;
+    if (nextToken) {
+      params = new URLSearchParams({ pagetoken: nextToken });
+    } else if (expansionsRef.current.length > 0) {
+      expandedQuery = expansionsRef.current[0];
+      params = new URLSearchParams({ q: expandedQuery });
+      const g = userPosRef.current;
+      if (g) { params.set('lat', String(g.lat)); params.set('lng', String(g.lng)); }
+    }
+    if (!params) return;
+
     const myId = searchIdRef.current;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
-      const { cards, nextPageToken } = await fetchPlaces(new URLSearchParams({ pagetoken: nextToken }));
+      const { cards, nextPageToken } = await fetchPlaces(params);
       if (myId !== searchIdRef.current) return;
+      if (expandedQuery !== null) {
+        expansionsRef.current = expansionsRef.current.slice(1);
+        setExpandLeft(expansionsRef.current.length);
+      }
       const items = toCards(cards, prefsRef.current.showNoPhoto).sort((a, b) => b.photosCount - a.photosCount);
       const ex = excludedIds();
       setDeck((prev) => {
@@ -878,7 +907,14 @@ export default function Home() {
       setStats((s) => s && ({ ...s, raw: s.raw + cards.length, withPhoto: s.withPhoto + items.length }));
       setNextToken(nextPageToken);
     } catch {
-      if (myId === searchIdRef.current) setNextToken(null); // 続きは諦める（今のカードはそのまま）
+      if (myId === searchIdRef.current) {
+        // 続きは諦める。追加検索の途中で失敗したときは、その言葉だけ飛ばして次へ進める
+        setNextToken(null);
+        if (expandedQuery !== null) {
+          expansionsRef.current = expansionsRef.current.slice(1);
+          setExpandLeft(expansionsRef.current.length);
+        }
+      }
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);
@@ -894,13 +930,21 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [favLoaded, seenLoaded]);
 
-  // 続きのページ（最大60件）を先読みする。残りが少ないときは即、そうでなければ少し待ってから
+  // 続きを先読みする：
+  //  ・同じ検索の次のページ（最大60件）は、少し待ってから自動で
+  //  ・60件を使い切りそうになったら、近い言葉での追加検索を足して、ずっと出し続ける
   useEffect(() => {
-    if (loading || !nextToken) return;
-    const t = setTimeout(loadMore, shownDeck.length <= PREFETCH_WHEN_LEFT ? 0 : 2000);
-    return () => clearTimeout(t);
+    if (loading || loadingMore) return;
+    if (nextToken) {
+      const t = setTimeout(loadMore, shownDeck.length <= PREFETCH_WHEN_LEFT ? 0 : 2000);
+      return () => clearTimeout(t);
+    }
+    if (expandLeft > 0 && shownDeck.length <= EXPAND_WHEN_LEFT) {
+      const t = setTimeout(loadMore, 0);
+      return () => clearTimeout(t);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shownDeck.length, nextToken, loading]);
+  }, [shownDeck.length, nextToken, loading, loadingMore, expandLeft]);
 
   /** 画像切替（不足時は Details から補完） */
   async function nextPhotoWithFetch(placeId: string, delta: 1 | -1 = 1) {
@@ -1472,7 +1516,7 @@ export default function Home() {
       {/* 残り件数 */}
       {stats && !loading && (
         <div style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>
-          残り {shownDeck.length}件{nextToken ? '＋' : ''}
+          残り {shownDeck.length}件{nextToken || expandLeft > 0 ? '＋' : ''}
           {deck.length !== shownDeck.length && `（絞り込みで${deck.length - shownDeck.length}件非表示）`}
           {loadingMore && ' ・続きを読み込み中…'}
           {stats.hidden > 0 && ` ・見送り/保存済み${stats.hidden}件を除外`}
