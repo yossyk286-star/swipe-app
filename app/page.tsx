@@ -744,6 +744,19 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  // 探す画面では、ページ全体の引っ張りスクロールも止める
+  useEffect(() => {
+    const lock = tab === 'search';
+    document.documentElement.style.overflow = lock ? 'hidden' : '';
+    document.body.style.overflow = lock ? 'hidden' : '';
+    document.body.style.overscrollBehavior = lock ? 'none' : '';
+    return () => {
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+      document.body.style.overscrollBehavior = '';
+    };
+  }, [tab]);
+
   /** 表示中のデッキ（絞り込み適用後） */
   const shownDeck = useMemo(() => deck.filter((c) => passesFilters(c, filters, userPos)), [deck, filters, userPos]);
   const top = shownDeck[0];
@@ -1213,14 +1226,15 @@ export default function Home() {
           display: tab === 'search' ? 'flex' : 'none',
           flexDirection: 'column', alignItems: 'center', gap: 10,
           padding: '0 16px 8px', boxSizing: 'border-box',
-          // 画面に収める（スクロール不要）。絞り込みパネルを開いたときだけ中でスクロール
-          height: `calc(100dvh - ${NAV_OFFSET})`, overflowY: 'auto', overscrollBehavior: 'contain',
+          // 探す画面は画面に完全に固定（スクロール・引っ張りバウンスなし）
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: NAV_OFFSET,
+          overflow: 'hidden', overscrollBehavior: 'none',
         }}
       >
       {/* 検索・絞り込み（スクロールしても上に残す） */}
       <div
         style={{
-          position: 'sticky', top: 0, zIndex: 60, alignSelf: 'stretch', flexShrink: 0, margin: '0 -16px',
+          position: 'relative', zIndex: 60, alignSelf: 'stretch', flexShrink: 0, margin: '0 -16px',
           padding: 'max(12px, env(safe-area-inset-top)) 16px 10px', background: 'var(--bg)',
           borderBottom: '1px solid var(--border)', boxShadow: '0 4px 10px var(--elev)',
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
@@ -1262,7 +1276,8 @@ export default function Home() {
         </div>
         {filterOpen && (
           <div style={{
-            marginTop: 8, padding: 12, borderRadius: 12, background: 'var(--card)', boxShadow: '0 4px 12px var(--elev)',
+            position: 'absolute', left: 16, right: 16, top: '100%', marginTop: 6, zIndex: 70,
+            width: 360, maxWidth: 'calc(100% - 32px)', marginInline: 'auto', boxSizing: 'border-box', padding: 12, borderRadius: 12, background: 'var(--card)', boxShadow: '0 4px 12px var(--elev)',
             display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, fontSize: 12,
           }}>
             <label style={{ display: 'grid', gap: 4 }}>
