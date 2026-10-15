@@ -91,6 +91,14 @@ export function toCards(raw: ApiPlace[], includeNoPhoto = false): PlaceCard[] {
     }));
 }
 
+/** タグのアイコンとして選べる絵文字 */
+export const TAG_ICON_CHOICES = [
+  '🍺', '🍻', '🍷', '🍸', '🥂', '☕', '🍵', '🍰',
+  '🍜', '🍣', '🍖', '🍕', '🍔', '🍙', '🥗', '🍱',
+  '🍢', '🦐', '🥩', '🍛', '🌶️', '🍨', '🎂', '🍩',
+  '❤️', '⭐', '🔥', '🎉', '💼', '👫', '🏠', '📌',
+] as const;
+
 /** ------------ 距離 ------------ */
 export function haversineMeters(a: LatLng, b: LatLng) {
   const R = 6371e3;
@@ -290,4 +298,5 @@ export const STORAGE_KEYS = {
   theme: 'theme',
   accent: 'accent_v1',
   prefs: 'prefs_v1',
+  tagIcons: 'tag_icons_v1',
 } as const;
