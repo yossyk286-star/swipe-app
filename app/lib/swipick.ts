@@ -125,6 +125,39 @@ export function formatCount(n: number | null | undefined) {
   return (n ?? 0).toLocaleString('ja-JP');
 }
 
+/** Google の types からカテゴリ名を作る（上にあるものほど優先） */
+const TYPE_LABELS: [string, string][] = [
+  ['cafe', 'カフェ'],
+  ['bar', 'バー'],
+  ['night_club', 'ナイトクラブ'],
+  ['bakery', 'ベーカリー'],
+  ['meal_takeaway', 'テイクアウト'],
+  ['meal_delivery', 'デリバリー'],
+  ['restaurant', 'レストラン'],
+  ['food', '飲食店'],
+  ['lodging', '宿泊施設'],
+  ['tourist_attraction', '観光スポット'],
+  ['park', '公園'],
+  ['store', '店舗'],
+];
+
+export function typeLabel(types: string[] | undefined): string | null {
+  if (!types) return null;
+  for (const [key, label] of TYPE_LABELS) {
+    if (types.includes(key)) return label;
+  }
+  return null;
+}
+
+/** 住所から「日本、」と郵便番号を取り除いて短くする */
+export function shortAddress(a: string | null | undefined): string {
+  if (!a) return '';
+  return a.replace(/^日本、\s*/, '').replace(/^〒\s*\d{3}-?\d{4}\s*/, '').trim();
+}
+
+/** 下タブの高さ（px）。固定バーやトーストの位置合わせに使う */
+export const NAV_HEIGHT = 64;
+
 /** ------------ Googleマップへのリンク ------------ */
 export function mapsPlaceUrl(name: string, placeId?: string) {
   const p = new URLSearchParams({ api: '1', query: name });

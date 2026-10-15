@@ -13,10 +13,13 @@ import {
 } from 'framer-motion';
 import { TagSheet, TagManager } from './TagSheets';
 import FavoritesMap, { MapItem } from './components/FavoritesMap';
+import SavedView from './components/SavedView';
+import { Icon } from './components/Icons';
 import {
   ApiPlace,
   Favorite,
   LatLng,
+  NAV_HEIGHT,
   PlaceCard,
   PlaceDetails,
   STORAGE_KEYS,
@@ -50,7 +53,6 @@ type SwipeDir = 'left' | 'right';
 type HistoryEntry = { card: PlaceCard; dir: SwipeDir; addedFav: boolean };
 type SearchStats = { query: string; raw: number; withPhoto: number; hidden: number };
 type ErrorInfo = { message: string; detail?: string };
-type SortMode = 'new' | 'rating' | 'near';
 
 /** ------------ 詳細情報のキャッシュ（同じお店の再取得＝課金を避ける） ------------ */
 const detailsCache = new Map<string, PlaceDetails>();
@@ -111,14 +113,6 @@ function passesFilters(c: PlaceCard, f: Filters, pos: LatLng | null) {
 
 function isFilterActive(f: Filters) {
   return f.openNow || f.minRating > 0 || f.price !== 0 || f.maxDist > 0;
-}
-
-/** ------------ Hydration-safe hooks ------------ */
-function useMounted() {
-  const [mounted, setMounted] = useState(false);
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => setMounted(true), []);
-  return mounted;
 }
 
 /** 初回は initial、マウント後に localStorage を反映。読み込み完了までは書き込まない */
@@ -563,22 +557,6 @@ function SwipeableCard({
 
 /** ------------ ページ本体 ------------ */
 export default function Home() {
-  const mounted = useMounted();
-
-  /** テーマ */
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.theme);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (stored === 'dark' || stored === 'light') setTheme(stored);
-    } catch {}
-  }, []);
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    try { localStorage.setItem(STORAGE_KEYS.theme, theme); } catch {}
-  }, [theme]);
-
   /** 保存データ */
   const [favorites, setFavorites, favLoaded] = usePersistent<Favorite[]>(STORAGE_KEYS.favorites, []);
   const [userTags, setUserTags] = usePersistent<string[]>(STORAGE_KEYS.tags, ['カフェ', '居酒屋', 'バー']);
@@ -612,12 +590,6 @@ export default function Home() {
   useEffect(() => { favRef.current = favorites; }, [favorites]);
   useEffect(() => { userPosRef.current = userPos; }, [userPos]);
 
-  // お気に入りフィルタ
-  const [favFilterText, setFavFilterText] = useState('');
-  const [favFilterTags, setFavFilterTags] = useState<Set<string>>(new Set());
-  const [favFilterMode, setFavFilterMode] = useState<'any' | 'all'>('any');
-  const [sortMode, setSortMode] = useState<SortMode>('new');
-
   // 詳細モーダル
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsPlaceId, setDetailsPlaceId] = useState<string>('');
@@ -629,20 +601,13 @@ export default function Home() {
   }, []);
   const closeDetails = useCallback(() => setDetailsOpen(false), []);
 
-  // お気に入りタブ
-  type FavTab = 'list' | 'map' | 'tag-add';
-  const [favTab, setFavTab] = useState<FavTab>('list');
+  // 下タブ（探す / 保存済み / 地図）
+  type MainTab = 'search' | 'saved' | 'map';
+  const [tab, setTab] = useState<MainTab>('search');
+  const [mapTag, setMapTag] = useState<string | null>(null);
 
-  // タグ追加タブ用
-  const [selectedFavIds, setSelectedFavIds] = useState<Set<string>>(new Set());
-  const [tagInput, setTagInput] = useState('');
-
-  // 一覧タブ：ヘッダー右「タグを追加」
-  const [showGlobalAddBar, setShowGlobalAddBar] = useState(false);
-  const [globalTagInput, setGlobalTagInput] = useState('');
-
-  // タグ編集シート（お店ごと）／タグ管理
-  const [tagSheetFavId, setTagSheetFavId] = useState<string | null>(null);
+  // タグ編集シートの対象（お店のID。複数ならまとめて編集）／タグ管理
+  const [tagSheetIds, setTagSheetIds] = useState<string[]>([]);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
 
   // 絞り込みパネル
@@ -659,9 +624,6 @@ export default function Home() {
     const t = setTimeout(() => setToast((cur) => (cur?.id === id ? null : cur)), 4500);
     return () => clearTimeout(t);
   }, [toast]);
-
-  // バックアップ読み込み用
-  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   /** 表示中のデッキ（絞り込み適用後） */
   const shownDeck = useMemo(() => deck.filter((c) => passesFilters(c, filters, userPos)), [deck, filters, userPos]);
@@ -841,7 +803,7 @@ export default function Home() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-      if (detailsOpen || tagSheetFavId || tagManagerOpen) return;
+      if (tab !== 'search' || detailsOpen || tagSheetIds.length > 0 || tagManagerOpen) return;
       if (e.key === 'ArrowRight' && top) { e.preventDefault(); handleSwipe(top, 'right'); }
       else if (e.key === 'ArrowLeft' && top) { e.preventDefault(); handleSwipe(top, 'left'); }
       else if (e.key === 'ArrowUp' && top) { e.preventDefault(); openDetails(top.id, top.name); }
@@ -851,33 +813,62 @@ export default function Home() {
     return () => window.removeEventListener('keydown', onKey);
   });
 
+  /** タグの件数・一覧 */
+  const tagCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const f of favorites) for (const t of f.tags || []) m[t] = (m[t] || 0) + 1;
+    return m;
+  }, [favorites]);
+
+  const existingAllTags = useMemo(
+    () => Array.from(new Set([...userTags, ...favorites.flatMap((f) => f.tags || [])])),
+    [userTags, favorites]
+  );
+
   /** お気に入り操作 */
   function deleteFavorite(id: string) {
     const idx = favorites.findIndex((f) => f.id === id);
     if (idx < 0) return;
     const removed = favorites[idx];
     setFavorites((prev) => prev.filter((f) => f.id !== id));
-    setSelectedFavIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    setTagSheetIds((prev) => prev.filter((x) => x !== id));
     showToast(`「${removed.name}」を削除しました`, '元に戻す', () => {
       setFavorites((prev) => (prev.some((f) => f.id === id) ? prev : [...prev.slice(0, idx), removed, ...prev.slice(idx)]));
     });
   }
 
-  /** タグ操作：お店ごとの付け外し／新規作成／全体の名前変更・削除 */
-  function toggleTagOnFavorite(id: string, tag: string) {
-    setFavorites((prev) => prev.map((f) => {
-      if (f.id !== id) return f;
-      const cur = f.tags || [];
-      return { ...f, tags: cur.includes(tag) ? cur.filter((t) => t !== tag) : [...cur, tag] };
-    }));
+  /** タグ操作：まとめて付け外し／新規作成／全体の名前変更・削除 */
+  function toggleTagOn(ids: string[], tag: string) {
+    const target = new Set(ids);
+    setFavorites((prev) => {
+      const targets = prev.filter((f) => target.has(f.id));
+      // 全員が持っていれば外す、そうでなければ全員に付ける
+      const allHave = targets.length > 0 && targets.every((f) => (f.tags || []).includes(tag));
+      return prev.map((f) => {
+        if (!target.has(f.id)) return f;
+        const cur = f.tags || [];
+        if (allHave) return { ...f, tags: cur.filter((t) => t !== tag) };
+        return cur.includes(tag) ? f : { ...f, tags: [...cur, tag] };
+      });
+    });
   }
-  function createTagOnFavorite(id: string, raw: string) {
+  function createTagOn(ids: string[], raw: string) {
     const t = raw.trim();
     if (!t) return;
+    const target = new Set(ids);
     setFavorites((prev) => prev.map((f) =>
-      f.id === id ? { ...f, tags: Array.from(new Set([...(f.tags || []), t])) } : f
+      target.has(f.id) ? { ...f, tags: Array.from(new Set([...(f.tags || []), t])) } : f
     ));
     setUserTags((prev) => (prev.includes(t) ? prev : [...prev, t]));
+  }
+  function createTag(raw: string) {
+    const t = raw.trim();
+    if (!t) return;
+    if (existingAllTags.includes(t)) {
+      showToast('既に存在するタグです');
+      return;
+    }
+    setUserTags((prev) => [...prev, t]);
   }
   function renameTag(oldName: string, raw: string) {
     const n = raw.trim();
@@ -888,54 +879,30 @@ export default function Home() {
         : f
     ));
     setUserTags((prev) => Array.from(new Set(prev.map((t) => (t === oldName ? n : t)))));
-    setFavFilterTags((prev) => {
-      if (!prev.has(oldName)) return prev;
-      const s = new Set(prev); s.delete(oldName); s.add(n); return s;
-    });
+    setMapTag((prev) => (prev === oldName ? n : prev));
   }
   function deleteTag(tag: string) {
     setFavorites((prev) => prev.map((f) =>
       (f.tags || []).includes(tag) ? { ...f, tags: f.tags.filter((t) => t !== tag) } : f
     ));
     setUserTags((prev) => prev.filter((t) => t !== tag));
-    setFavFilterTags((prev) => {
-      if (!prev.has(tag)) return prev;
-      const s = new Set(prev); s.delete(tag); return s;
-    });
+    setMapTag((prev) => (prev === tag ? null : prev));
   }
 
-  /** お気に入りの絞り込み（文字・タグ）＋並び替え */
-  const filteredFavorites = useMemo(() => {
-    const text = favFilterText.trim().toLowerCase();
-    const tags = favFilterTags;
-    return favorites.filter((f) => {
-      const okText = !text ||
-        f.name.toLowerCase().includes(text) ||
-        (f.address || '').toLowerCase().includes(text);
-      const okTags = tags.size === 0 || (
-        favFilterMode === 'all'
-          ? [...tags].every((t) => f.tags?.includes(t))
-          : [...tags].some((t) => f.tags?.includes(t))
-      );
-      return okText && okTags;
-    });
-  }, [favorites, favFilterText, favFilterTags, favFilterMode]);
+  /** タグ編集シートの対象 */
+  const sheetFavs = useMemo(() => favorites.filter((f) => tagSheetIds.includes(f.id)), [favorites, tagSheetIds]);
+  const sheetActiveTags = useMemo(
+    () => existingAllTags.filter((t) => sheetFavs.length > 0 && sheetFavs.every((f) => f.tags?.includes(t))),
+    [existingAllTags, sheetFavs]
+  );
 
-  const sortedFavorites = useMemo(() => {
-    const arr = [...filteredFavorites];
-    if (sortMode === 'new') return arr.reverse(); // 配列は追加順なので逆順＝新しい順
-    if (sortMode === 'rating') {
-      return arr.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
-    }
-    // 近い順（位置不明は最後）
-    return arr.sort((a, b) => {
-      const da = distanceTo(userPos, a.lat, a.lng);
-      const db = distanceTo(userPos, b.lat, b.lng);
-      return (da ?? Infinity) - (db ?? Infinity);
-    });
-  }, [filteredFavorites, sortMode, userPos]);
-
-  const mapItems: MapItem[] = useMemo(() => filteredFavorites
+  /** 地図タブ */
+  const effMapTag = mapTag !== null && existingAllTags.includes(mapTag) ? mapTag : null;
+  const mapFavorites = useMemo(
+    () => (effMapTag !== null ? favorites.filter((f) => f.tags?.includes(effMapTag)) : favorites),
+    [favorites, effMapTag]
+  );
+  const mapItems: MapItem[] = useMemo(() => mapFavorites
     .filter((f) => f.lat != null && f.lng != null)
     .map((f) => {
       const sub = [
@@ -944,45 +911,20 @@ export default function Home() {
         formatDistance(distanceTo(userPos, f.lat, f.lng)),
       ].filter(Boolean).join(' · ');
       return { id: f.id, name: f.name, lat: f.lat as number, lng: f.lng as number, sub, href: mapsPlaceUrl(f.name, f.id) };
-    }), [filteredFavorites, userPos]);
+    }), [mapFavorites, userPos]);
   const openDetailsById = useCallback((id: string) => openDetails(id), [openDetails]);
 
-  /** タグごとの件数（チップ表示・管理画面用） */
-  const tagCounts = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const f of favorites) for (const t of f.tags || []) m[t] = (m[t] || 0) + 1;
-    return m;
-  }, [favorites]);
-
-  const tagSheetFav = tagSheetFavId ? favorites.find((f) => f.id === tagSheetFavId) ?? null : null;
-
-  const existingAllTags = useMemo(
-    () => Array.from(new Set([...userTags, ...favorites.flatMap((f) => f.tags || [])])),
-    [userTags, favorites]
-  );
-  function applyTagToSelected() {
-    const name = tagInput.trim();
-    if (!name || selectedFavIds.size === 0) return;
-    setFavorites((prev) => prev.map((f) => (selectedFavIds.has(f.id)
-      ? { ...f, tags: Array.from(new Set([...(f.tags || []), name])) }
-      : f)));
-    if (!userTags.includes(name)) setUserTags((prev) => [...prev, name]);
-    showToast(`${selectedFavIds.size}件に「${name}」を付けました`);
-    setTagInput('');
-    setSelectedFavIds(new Set());
+  function selectTab(next: MainTab) {
+    setTab(next);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }
-
-  function applyGlobalTag() {
-    const t = globalTagInput.trim();
-    if (!t) return;
-    if (userTags.includes(t)) {
-      showToast('既に存在するタグです');
-    } else {
-      setUserTags((prev) => [...prev, t]);
-    }
-    setGlobalTagInput('');
-    setShowGlobalAddBar(false);
-  }
+  const accentChip = (active: boolean): React.CSSProperties => ({
+    ...chipBase(false),
+    border: active ? '1px solid transparent' : '1px solid var(--border)',
+    background: active ? 'var(--accent-bg)' : 'var(--card)',
+    color: active ? 'var(--accent)' : 'var(--text)',
+    fontWeight: active ? 700 : 500,
+  });
 
   /** 共有リンク */
   async function shareFavorites(list: Favorite[]) {
@@ -1081,37 +1023,6 @@ export default function Home() {
     }
   }
 
-  /** テーマ用 CSS 変数（+ ヒントのフェードアウト） */
-  const themeVars = `
-    :root {
-      --bg: #f5f7fb;
-      --text: #111;
-      --text-muted: #666;
-      --card: #fff;
-      --border: #ddd;
-      --primary: #111;
-      --chip: #f1f1f1;
-      --elev: rgba(0,0,0,0.12);
-    }
-    [data-theme="dark"] {
-      --bg: #0f1115;
-      --text: #e8ecf1;
-      --text-muted: #b6bdc7;
-      --card: #171a20;
-      --border: #2a2f3a;
-      --primary: #e8ecf1;
-      --chip: #252a34;
-      --elev: rgba(0,0,0,0.42);
-    }
-    body { background: var(--bg); color: var(--text); }
-    input, button, select { color: inherit; font: inherit; }
-    button { cursor: pointer; }
-    .tap-hint { animation: hintFade 2s ease 2.5s forwards; }
-    @keyframes hintFade { to { opacity: 0; visibility: hidden; } }
-    .hscroll { scrollbar-width: none; }
-    .hscroll::-webkit-scrollbar { display: none; }
-  `;
-
   const filterActive = isFilterActive(filters);
   const selectStyle: React.CSSProperties = {
     padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 14, width: '100%',
@@ -1170,25 +1081,20 @@ export default function Home() {
   return (
     <main
       style={{
-        minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-        padding: '16px 16px calc(32px + env(safe-area-inset-bottom))',
-        position: 'relative',
+        minHeight: '100dvh', background: 'var(--bg)', color: 'var(--text)',
+        paddingBottom: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom))`,
       }}
     >
+      {/* ===== 探す ===== */}
+      <div
+        style={{
+          display: tab === 'search' ? 'flex' : 'none',
+          flexDirection: 'column', alignItems: 'center', gap: 12,
+          padding: '16px 16px 24px',
+        }}
+      >
       {/* ヘッダー */}
-      <div style={{ width: 360, maxWidth: '100%', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button
-          onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
-          title="テーマ切替"
-          aria-label="テーマ切替"
-          style={{ width: 36, height: 36, borderRadius: 999, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)' }}
-        >
-          <span suppressHydrationWarning>{mounted ? (theme === 'light' ? '🌙' : '🌞') : '🌙'}</span>
-        </button>
-        <h1 style={{ flex: 1, textAlign: 'center', fontSize: 22, fontWeight: 800, margin: 0 }}>Swipick</h1>
-        <div style={{ width: 36 }} />
-      </div>
+      <h1 style={{ textAlign: 'center', fontSize: 22, fontWeight: 800, margin: 0 }}>Swipick</h1>
 
       {/* 検索 */}
       <form
@@ -1359,349 +1265,113 @@ export default function Home() {
         </div>
       )}
 
-      {/* お気に入り：タブ（一覧 / 地図 / タグ追加） */}
-      <section style={{ width: 360, maxWidth: '100%', marginTop: 8 }} data-favorites="true">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-          {(['list', 'map', 'tag-add'] as const).map((k) => {
-            const active = favTab === k;
+      </div>
+
+      {/* ===== 保存済み（Googleマップの「保存済み」風） ===== */}
+      <div
+        style={{
+          display: tab === 'saved' ? 'block' : 'none',
+          maxWidth: 560, margin: '0 auto', padding: '16px 16px 24px', boxSizing: 'border-box',
+        }}
+      >
+        <SavedView
+          favorites={favorites}
+          allTags={existingAllTags}
+          tagCounts={tagCounts}
+          userPos={userPos}
+          seenCount={seenIds.length}
+          onOpenDetails={openDetails}
+          onEditTags={(ids) => setTagSheetIds(ids)}
+          onDelete={deleteFavorite}
+          onShare={shareFavorites}
+          onShowOnMap={(tag) => { setMapTag(tag); selectTab('map'); }}
+          onCreateTag={createTag}
+          onManageTags={() => setTagManagerOpen(true)}
+          onExport={exportBackup}
+          onImport={importBackup}
+          onResetSeen={resetSeen}
+          onGoSearch={() => selectTab('search')}
+        />
+      </div>
+
+      {/* ===== 地図 ===== */}
+      {tab === 'map' && (
+        <div style={{ maxWidth: 560, margin: '0 auto', padding: '16px 16px 24px', boxSizing: 'border-box' }}>
+          <h1 style={{ margin: '4px 2px 12px', fontSize: 24, fontWeight: 600 }}>地図</h1>
+          <div className="hscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 12 }}>
+            <button onClick={() => setMapTag(null)} style={accentChip(effMapTag === null)}>すべて</button>
+            {existingAllTags.map((t) => (
+              <button key={t} onClick={() => setMapTag(t)} style={accentChip(effMapTag === t)}>{t}</button>
+            ))}
+          </div>
+          <FavoritesMap
+            items={mapItems}
+            userPos={userPos}
+            onOpenDetails={openDetailsById}
+            height={`max(320px, calc(100dvh - ${NAV_HEIGHT + 190}px))`}
+          />
+          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+            {mapItems.length}件を表示
+            {mapItems.length < mapFavorites.length && `（位置情報のない${mapFavorites.length - mapItems.length}件は表示できません）`}
+          </div>
+        </div>
+      )}
+
+      {/* ===== 下タブ ===== */}
+      <nav
+        aria-label="メインメニュー"
+        style={{
+          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 3000,
+          background: 'var(--card)', borderTop: '1px solid var(--border)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}
+      >
+        <div style={{ maxWidth: 560, margin: '0 auto', height: NAV_HEIGHT, display: 'flex' }}>
+          {([
+            ['search', '探す', 'search'],
+            ['saved', '保存済み', 'bookmark'],
+            ['map', '地図', 'map'],
+          ] as const).map(([key, label, icon]) => {
+            const active = tab === key;
             return (
               <button
-                key={k}
-                onClick={() => setFavTab(k)}
+                key={key}
+                onClick={() => selectTab(key)}
+                aria-current={active ? 'page' : undefined}
                 style={{
-                  flex: 1, padding: '8px 0', borderRadius: 8,
-                  border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
-                  background: active ? 'var(--primary)' : 'var(--card)',
-                  color: active ? 'var(--bg)' : 'var(--text)', fontWeight: 700,
+                  flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+                  background: 'transparent', border: 'none',
+                  color: active ? 'var(--accent)' : 'var(--text-muted)',
+                  fontSize: 12, fontWeight: active ? 700 : 500,
                 }}
               >
-                {k === 'list' ? '一覧' : k === 'map' ? '地図' : 'タグ追加'}
+                <span
+                  style={{
+                    width: 56, height: 28, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: active ? 'var(--accent-bg)' : 'transparent',
+                  }}
+                >
+                  <Icon name={icon} size={22} />
+                </span>
+                {label}
               </button>
             );
           })}
         </div>
-
-        {favTab !== 'tag-add' && (
-          <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>お気に入り</h2>
-                <span style={{ color: 'var(--text-muted)', fontSize: 12 }} suppressHydrationWarning>
-                  {mounted ? `${filteredFavorites.length === favorites.length ? '' : `${filteredFavorites.length} / `}${favorites.length} 件` : '0 件'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => shareFavorites(filteredFavorites)} style={smallBtn} title="表示中のお気に入りを共有">
-                  📤 共有
-                </button>
-                <button
-                  onClick={() => setShowGlobalAddBar((s) => !s)}
-                  style={{ ...smallBtn, background: 'var(--primary)', color: 'var(--bg)', border: 'none' }}
-                >
-                  ＋タグ
-                </button>
-              </div>
-            </div>
-
-            {/* 検索バー */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <input
-                value={favFilterText}
-                onChange={(e) => setFavFilterText(e.target.value)}
-                placeholder="お気に入りを検索（名称／住所）"
-                style={{ flex: 1, minWidth: 0, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 16 }}
-              />
-              {favTab === 'list' && (
-                <select value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}
-                  aria-label="並び替え"
-                  style={{ padding: '8px 6px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 14 }}>
-                  <option value="new">新しい順</option>
-                  <option value="rating">評価順</option>
-                  <option value="near">近い順</option>
-                </select>
-              )}
-            </div>
-
-            {/* 追加バー（トグル） */}
-            {showGlobalAddBar && (
-              <form
-                onSubmit={(e) => { e.preventDefault(); applyGlobalTag(); }}
-                style={{ display: 'flex', gap: 8, marginBottom: 10 }}
-              >
-                <input
-                  value={globalTagInput}
-                  onChange={(e) => setGlobalTagInput(e.target.value)}
-                  placeholder="作成するタグ名（例：海鮮 / ワイン）"
-                  style={{ flex: 1, minWidth: 0, padding: '8px 10px', fontSize: 16, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)' }}
-                />
-                <button
-                  type="submit"
-                  disabled={globalTagInput.trim() === ''}
-                  style={{
-                    padding: '8px 12px', borderRadius: 10,
-                    background: globalTagInput.trim() === '' ? 'var(--chip)' : 'var(--primary)',
-                    color: globalTagInput.trim() === '' ? 'var(--text-muted)' : 'var(--bg)',
-                    border: 'none',
-                  }}
-                >
-                  作成
-                </button>
-              </form>
-            )}
-
-            {/* タグフィルタチップ（横スクロール1行・件数つき） */}
-            <div className="hscroll" style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 6, marginBottom: 4 }}>
-              {existingAllTags.map((t) => {
-                const active = favFilterTags.has(t);
-                return (
-                  <button
-                    key={t}
-                    onClick={() => setFavFilterTags((prev) => {
-                      const n = new Set(prev);
-                      if (active) n.delete(t); else n.add(t);
-                      return n;
-                    })}
-                    style={chipBase(active)}
-                  >
-                    {t}
-                    <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7 }}>{tagCounts[t] ?? 0}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* 絞り込みの操作行：いずれか／すべて・クリア・タグ管理 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              {favFilterTags.size >= 2 && (
-                <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-                  {(['any', 'all'] as const).map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => setFavFilterMode(m)}
-                      style={{
-                        padding: '4px 10px', fontSize: 12, border: 'none',
-                        background: favFilterMode === m ? 'var(--primary)' : 'var(--card)',
-                        color: favFilterMode === m ? 'var(--bg)' : 'var(--text)', fontWeight: 700,
-                      }}
-                    >
-                      {m === 'any' ? 'いずれか' : 'すべて含む'}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {favFilterTags.size > 0 && (
-                <button onClick={() => setFavFilterTags(new Set())} style={{ ...smallBtn, background: 'var(--chip)' }}>
-                  クリア
-                </button>
-              )}
-              <div style={{ flex: 1 }} />
-              <button onClick={() => setTagManagerOpen(true)} style={smallBtn}>
-                タグの管理
-              </button>
-            </div>
-          </>
-        )}
-
-        {favTab === 'list' && (
-          <div style={{ display: 'grid', gap: 10 }}>
-            {sortedFavorites.length === 0 ? (
-              <div style={{ padding: 12, borderRadius: 8, background: 'var(--card)', color: 'var(--text-muted)', fontSize: 14, boxShadow: '0 10px 30px var(--elev)' }}>
-                {favorites.length === 0 ? '右にスワイプ（♥）したお店がここに並びます' : '条件に一致するお気に入りはありません'}
-              </div>
-            ) : (
-              sortedFavorites.map((f) => (
-                <div key={f.id} style={{ borderRadius: 12, overflow: 'hidden', background: 'var(--card)', color: 'var(--text)', boxShadow: '0 4px 12px var(--elev)' }}>
-                  <div style={{ display: 'flex', alignItems: 'stretch', minHeight: CARD_IMG_SIZE }}>
-                    {/* 左：画像（タップで詳細） */}
-                    <div onClick={() => openDetails(f.id, f.name)}
-                      style={{ width: CARD_IMG_SIZE, minHeight: CARD_IMG_SIZE, flex: '0 0 auto', cursor: 'pointer', position: 'relative' }}>
-                      <AnimatedImage src={f.image} alt={f.name} variant="fade" />
-                    </div>
-
-                    {/* 右：本文 */}
-                    <div style={{ flex: 1, padding: '8px 10px', minWidth: 0, overflow: 'hidden' }}>
-                      <div
-                        onClick={() => openDetails(f.id, f.name)}
-                        style={{
-                          fontWeight: 700, lineHeight: 1.25, cursor: 'pointer',
-                          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                        }}
-                      >
-                        {f.name}
-                      </div>
-                      <div style={{ fontSize: 12, marginTop: 4, color: 'var(--text-muted)' }}>
-                        <MetaLine c={f} pos={userPos} />
-                      </div>
-                      {/* タグ（タップでタグ編集） */}
-                      <div
-                        className="hscroll"
-                        onClick={() => setTagSheetFavId(f.id)}
-                        style={{ display: 'flex', gap: 6, marginTop: 6, overflowX: 'auto', whiteSpace: 'nowrap', cursor: 'pointer' }}
-                      >
-                        {(f.tags || []).map((t) => (
-                          <span key={t} style={{ padding: '2px 8px', borderRadius: 999, background: 'var(--chip)', fontSize: 11, flex: '0 0 auto' }}>{t}</span>
-                        ))}
-                        {(f.tags || []).length === 0 && (
-                          <span style={{ padding: '2px 8px', borderRadius: 999, border: '1px dashed var(--border)', color: 'var(--text-muted)', fontSize: 11, flex: '0 0 auto' }}>＋タグを付ける</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 行動ボタン */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 44px', borderTop: '1px solid var(--border)' }}>
-                    <a href={mapsDirectionsUrl(f.name, f.id)} target="_blank" rel="noreferrer"
-                      style={{ padding: '9px 0', textAlign: 'center', fontSize: 13, color: 'var(--text)', textDecoration: 'none', borderRight: '1px solid var(--border)' }}>
-                      🚶 経路
-                    </a>
-                    <a href={mapsPlaceUrl(f.name, f.id)} target="_blank" rel="noreferrer"
-                      style={{ padding: '9px 0', textAlign: 'center', fontSize: 13, color: 'var(--text)', textDecoration: 'none', borderRight: '1px solid var(--border)' }}>
-                      🗺 地図
-                    </a>
-                    <button onClick={() => setTagSheetFavId(f.id)}
-                      style={{ padding: '9px 0', fontSize: 13, border: 'none', background: 'transparent', borderRight: '1px solid var(--border)' }}>
-                      🏷 タグ
-                    </button>
-                    <button onClick={() => deleteFavorite(f.id)} aria-label="お気に入りから削除" title="お気に入りから削除"
-                      style={{ padding: '9px 0', fontSize: 14, border: 'none', background: 'transparent' }}>
-                      🗑️
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {favTab === 'map' && (
-          <FavoritesMap items={mapItems} userPos={userPos} onOpenDetails={openDetailsById} />
-        )}
-
-        {favTab === 'tag-add' && (
-          /* タグ追加タブ（まとめてタグ付け） */
-          <div style={{ display: 'grid', gap: 12 }}>
-            <form onSubmit={(e) => { e.preventDefault(); applyTagToSelected(); }} style={{ display: 'flex', gap: 8 }}>
-              <input
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                placeholder="付けるタグ名（例：海鮮 / ワイン）"
-                style={{ flex: 1, minWidth: 0, padding: '8px 10px', fontSize: 16, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)' }}
-              />
-              <button
-                type="submit"
-                disabled={selectedFavIds.size === 0 || tagInput.trim() === ''}
-                style={{
-                  padding: '8px 10px', borderRadius: 10,
-                  background: (selectedFavIds.size === 0 || tagInput.trim() === '') ? 'var(--chip)' : 'var(--primary)',
-                  color: (selectedFavIds.size === 0 || tagInput.trim() === '') ? 'var(--text-muted)' : 'var(--bg)',
-                  border: 'none', minWidth: 72,
-                }}
-              >
-                付ける
-              </button>
-            </form>
-
-            <div style={{ color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ flex: 1 }}>まとめてタグ付けしたいお店を選んで、タグ名を入れて「付ける」。（{selectedFavIds.size}件選択中）</span>
-              {favorites.length > 0 && (
-                <button
-                  onClick={() => setSelectedFavIds(selectedFavIds.size === favorites.length ? new Set() : new Set(favorites.map((f) => f.id)))}
-                  style={smallBtn}
-                >
-                  {selectedFavIds.size === favorites.length ? '全解除' : '全選択'}
-                </button>
-              )}
-            </div>
-
-            <div className="hscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
-              {existingAllTags.map((t) => (
-                <button key={t} onClick={() => setTagInput(t)} style={chipBase(tagInput.trim() === t)}>
-                  {t}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {favorites.map((f) => {
-                const checked = selectedFavIds.has(f.id);
-                return (
-                  <label key={f.id} style={{
-                    position: 'relative', borderRadius: 10, overflow: 'hidden', background: 'var(--card)', color: 'var(--text)',
-                    boxShadow: '0 4px 12px var(--elev)', cursor: 'pointer',
-                    outline: checked ? '3px solid var(--primary)' : 'none',
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        const on = e.target.checked;
-                        setSelectedFavIds((prev) => {
-                          const n = new Set(prev);
-                          if (on) n.add(f.id); else n.delete(f.id);
-                          return n;
-                        });
-                      }}
-                      style={{ position: 'absolute', top: 8, left: 8, zIndex: 2, width: 18, height: 18 }}
-                    />
-                    {f.image
-                      ? <img src={f.image} alt={f.name} style={{ width: '100%', height: 96, objectFit: 'cover', display: 'block' }} />
-                      : <div style={{ height: 96, background: 'var(--chip)' }} />}
-                    <div style={{ padding: 8, fontSize: 12, fontWeight: 700 }}>{f.name}</div>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* バックアップ */}
-      <section style={{
-        width: 360, maxWidth: '100%', marginTop: 16, padding: 12, borderRadius: 12, boxSizing: 'border-box',
-        background: 'var(--card)', boxShadow: '0 4px 12px var(--elev)', fontSize: 13,
-      }}>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>データのバックアップ</div>
-        <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6, marginBottom: 10 }}>
-          お気に入りとタグは、この端末のブラウザ内だけに保存されています。機種変更やブラウザのデータ削除の前に書き出しておくと、別の端末で読み込めます。
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={exportBackup} disabled={favorites.length === 0} style={{ ...smallBtn, flex: 1, padding: '8px 10px', opacity: favorites.length === 0 ? 0.5 : 1 }}>
-            ⬇️ 書き出す
-          </button>
-          <button onClick={() => importInputRef.current?.click()} style={{ ...smallBtn, flex: 1, padding: '8px 10px' }}>
-            ⬆️ 読み込む
-          </button>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept="application/json,.json"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) importBackup(file);
-              e.target.value = '';
-            }}
-          />
-        </div>
-        {seenIds.length > 0 && (
-          <button onClick={resetSeen} style={{ ...smallBtn, marginTop: 8, width: '100%', padding: '8px 10px' }}>
-            見送り履歴（{seenIds.length}件）をリセット
-          </button>
-        )}
-      </section>
+      </nav>
 
       {/* 詳細モーダル */}
       <DetailsModal open={detailsOpen} onClose={closeDetails} placeId={detailsPlaceId} fallbackName={detailsName} />
 
-      {/* タグ編集シート（お店ごと） */}
-      {tagSheetFav && (
+      {/* タグ編集シート（お店ごと・まとめて） */}
+      {sheetFavs.length > 0 && (
         <TagSheet
-          title={tagSheetFav.name}
+          title={sheetFavs.length === 1 ? sheetFavs[0].name : `${sheetFavs.length}件のお店`}
           allTags={existingAllTags}
-          activeTags={tagSheetFav.tags || []}
-          onToggle={(t) => toggleTagOnFavorite(tagSheetFav.id, t)}
-          onCreate={(t) => createTagOnFavorite(tagSheetFav.id, t)}
-          onClose={() => setTagSheetFavId(null)}
+          activeTags={sheetActiveTags}
+          onToggle={(t) => toggleTagOn(tagSheetIds, t)}
+          onCreate={(t) => createTagOn(tagSheetIds, t)}
+          onClose={() => setTagSheetIds([])}
         />
       )}
 
@@ -1726,7 +1396,7 @@ export default function Home() {
             exit={{ opacity: 0, y: 20 }}
             role="status"
             style={{
-              position: 'fixed', left: '50%', bottom: 'calc(20px + env(safe-area-inset-bottom))', x: '-50%',
+              position: 'fixed', left: '50%', bottom: `calc(${NAV_HEIGHT + 16}px + env(safe-area-inset-bottom))`, x: '-50%',
               zIndex: 6000, background: '#111', color: '#fff', borderRadius: 12,
               padding: '10px 14px', fontSize: 14, display: 'flex', alignItems: 'center', gap: 12,
               boxShadow: '0 8px 24px rgba(0,0,0,0.3)', maxWidth: 'calc(100vw - 32px)',
@@ -1747,7 +1417,6 @@ export default function Home() {
 
       {/* テーマCSS・スケルトンCSS */}
       <style>{`
-        ${themeVars}
         .skeleton-hero, .skeleton-line { animation: pulse 1.2s infinite ease-in-out; opacity:.6; }
         @keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:1} }
       `}</style>

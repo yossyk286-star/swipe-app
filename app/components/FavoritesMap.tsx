@@ -51,10 +51,12 @@ export default function FavoritesMap({
   items,
   userPos,
   onOpenDetails,
+  height = 380,
 }: {
   items: MapItem[];
   userPos: LatLng | null;
   onOpenDetails?: (id: string) => void;
+  height?: number | string;
 }) {
   const elRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
@@ -179,7 +181,7 @@ export default function FavoritesMap({
         ref={elRef}
         style={{
           width: '100%',
-          height: 380,
+          height,
           borderRadius: 12,
           overflow: 'hidden',
           background: 'var(--chip)',

@@ -59,8 +59,8 @@ export default function ShareClient() {
     <main
       style={{
         minHeight: '100vh',
-        background: '#f5f7fb',
-        color: '#111',
+        background: 'var(--bg)',
+        color: 'var(--text)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -69,7 +69,7 @@ export default function ShareClient() {
       }}
     >
       <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>共有リスト</h1>
-      <p style={{ color: '#555', margin: 0, fontSize: 14 }}>
+      <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: 14 }}>
         {items.length > 0 ? `${items.length}件のお店が届きました` : '受け取ったお気に入りをまとめて表示'}
       </p>
 
@@ -80,9 +80,9 @@ export default function ShareClient() {
             maxWidth: '90vw',
             padding: 16,
             borderRadius: 12,
-            background: '#fff',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.08)',
-            color: '#555',
+            background: 'var(--card)',
+            boxShadow: '0 10px 30px var(--elev)',
+            color: 'var(--text-muted)',
           }}
         >
           共有データが読み取れませんでした。
@@ -96,14 +96,14 @@ export default function ShareClient() {
                 onClick={importAll}
                 style={{
                   padding: '12px 14px', borderRadius: 10, border: 'none',
-                  background: '#111', color: '#fff', fontWeight: 700, fontSize: 15,
+                  background: 'var(--primary)', color: 'var(--bg)', fontWeight: 700, fontSize: 15,
                 }}
               >
                 ♥ まとめて自分のお気に入りに追加
               </button>
               {result && (
-                <div style={{ fontSize: 13, color: '#333', textAlign: 'center' }}>
-                  {result} <a href="/" style={{ color: '#111', fontWeight: 700 }}>Swipickを開く →</a>
+                <div style={{ fontSize: 13, color: 'var(--text)', textAlign: 'center' }}>
+                  {result} <a href="/" style={{ color: 'var(--accent)', fontWeight: 700 }}>Swipickを開く →</a>
                 </div>
               )}
             </div>
@@ -127,8 +127,8 @@ export default function ShareClient() {
                 style={{
                   borderRadius: 10,
                   overflow: 'hidden',
-                  background: '#fff',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
+                  background: 'var(--card)',
+                  boxShadow: '0 4px 12px var(--elev)',
                   display: 'flex',
                   flexDirection: 'column',
                 }}
@@ -147,7 +147,7 @@ export default function ShareClient() {
                       style={{ width: '100%', height: 120, objectFit: 'cover', display: 'block' }}
                     />
                   ) : (
-                    <div style={{ height: 120, background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>🍽</div>
+                    <div style={{ height: 120, background: 'var(--chip)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>🍽</div>
                   )}
                   <div style={{ padding: '8px 10px 4px', fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>
                     {f.name}
@@ -158,7 +158,7 @@ export default function ShareClient() {
                     href={mapsDirectionsUrl(f.name, f.placeId)}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ fontSize: 12, color: '#111', border: '1px solid #ddd', borderRadius: 6, padding: '4px 8px', textDecoration: 'none' }}
+                    style={{ fontSize: 12, color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', textDecoration: 'none' }}
                   >
                     🚶 経路
                   </a>
@@ -166,7 +166,7 @@ export default function ShareClient() {
                     href={mapsPlaceUrl(f.name, f.placeId)}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ fontSize: 12, color: '#111', border: '1px solid #ddd', borderRadius: 6, padding: '4px 8px', textDecoration: 'none' }}
+                    style={{ fontSize: 12, color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', textDecoration: 'none' }}
                   >
                     🗺 地図
                   </a>
