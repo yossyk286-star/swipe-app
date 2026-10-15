@@ -732,10 +732,11 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [favLoaded, seenLoaded]);
 
-  // 残りが少なくなったら続きを取得
+  // 続きのページ（最大60件）を先読みする。残りが少ないときは即、そうでなければ少し待ってから
   useEffect(() => {
     if (loading || !nextToken) return;
-    if (shownDeck.length <= PREFETCH_WHEN_LEFT) loadMore();
+    const t = setTimeout(loadMore, shownDeck.length <= PREFETCH_WHEN_LEFT ? 0 : 2000);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownDeck.length, nextToken, loading]);
 
@@ -1259,7 +1260,7 @@ export default function Home() {
       {/* 残り件数 */}
       {stats && !loading && (
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -4 }}>
-          残り {shownDeck.length}件
+          残り {shownDeck.length}件{nextToken ? '＋' : ''}
           {deck.length !== shownDeck.length && `（絞り込みで${deck.length - shownDeck.length}件非表示）`}
           {loadingMore && ' ・続きを読み込み中…'}
           {stats.hidden > 0 && ` ・見送り/保存済み${stats.hidden}件を除外`}
