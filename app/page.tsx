@@ -65,7 +65,7 @@ const DEFAULT_FILTERS: Filters = { openNow: false, minRating: 0, price: 0, maxDi
 const PRICE_LOWER = [0, 0, 1000, 3000, 6000];
 
 type SwipeDir = 'left' | 'right';
-type HistoryEntry = { card: PlaceCard; dir: SwipeDir; addedFav: boolean };
+type HistoryEntry = { card: PlaceCard; dir: SwipeDir; addedFav: boolean; addedTags?: string[] };
 type SearchStats = { query: string; raw: number; withPhoto: number; hidden: number };
 type ErrorInfo = { message: string; detail?: string };
 
@@ -708,6 +708,8 @@ export default function Home() {
   const [favorites, setFavorites, favLoaded] = usePersistent<Favorite[]>(STORAGE_KEYS.favorites, []);
   const [userTags, setUserTags] = usePersistent<string[]>(STORAGE_KEYS.tags, ['カフェ', '居酒屋', 'バー']);
   const [seenIds, setSeenIds, seenLoaded] = usePersistent<string[]>(STORAGE_KEYS.seen, []);
+  const [autoTagsRaw, setAutoTags] = usePersistent<string[]>('auto_tags_v1', []);
+  const [tagPickOpen, setTagPickOpen] = useState(false);
   const [tagIcons, setTagIcons] = usePersistent<Record<string, string>>(STORAGE_KEYS.tagIcons, {});
   const [prefsRaw, setPrefs] = usePersistent<Prefs>(STORAGE_KEYS.prefs, DEFAULT_PREFS);
   const prefs: Prefs = useMemo(() => ({ ...DEFAULT_PREFS, ...prefsRaw }), [prefsRaw]);
@@ -991,13 +993,18 @@ export default function Home() {
     if (prefsRef.current.haptics && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
       navigator.vibrate(dir === 'right' ? 25 : 12);
     }
-    const already = favorites.some((f) => f.id === card.id);
+    const existing = favorites.find((f) => f.id === card.id);
+    const already = !!existing;
+    // 右スワイプ時に自動で付けるタグ（いま存在するタグだけ）
+    const autoTags = autoTagsRaw.filter((t) => existingAllTags.includes(t));
+    const addedTags = existing ? autoTags.filter((t) => !(existing.tags || []).includes(t)) : [];
     if (dir === 'right') {
-      if (!already) setFavorites((prev) => (prev.some((p) => p.id === card.id) ? prev : [...prev, { ...card, tags: [], addedAt: Date.now() }]));
+      if (!already) setFavorites((prev) => (prev.some((p) => p.id === card.id) ? prev : [...prev, { ...card, tags: [...autoTags], addedAt: Date.now() }]));
+      else if (addedTags.length > 0) setFavorites((prev) => prev.map((f) => (f.id === card.id ? { ...f, tags: Array.from(new Set([...(f.tags || []), ...addedTags])) } : f)));
     } else {
       setSeenIds((prev) => (prev.includes(card.id) ? prev : [...prev, card.id].slice(-MAX_SEEN)));
     }
-    setHistory((prev) => [...prev, { card, dir, addedFav: dir === 'right' && !already }].slice(-30));
+    setHistory((prev) => [...prev, { card, dir, addedFav: dir === 'right' && !already, addedTags: dir === 'right' ? addedTags : undefined }].slice(-30));
     setDeck((prev) => prev.filter((c) => c.id !== card.id));
   }
 
@@ -1007,6 +1014,10 @@ export default function Home() {
     setExitDir(null);
     setHistory((prev) => prev.slice(0, -1));
     if (last.dir === 'right' && last.addedFav) setFavorites((prev) => prev.filter((f) => f.id !== last.card.id));
+    else if (last.dir === 'right' && last.addedTags && last.addedTags.length > 0) {
+      const rm = last.addedTags;
+      setFavorites((prev) => prev.map((f) => (f.id === last.card.id ? { ...f, tags: (f.tags || []).filter((t) => !rm.includes(t)) } : f)));
+    }
     if (last.dir === 'left') setSeenIds((prev) => prev.filter((id) => id !== last.card.id));
     setDeck((prev) => [last.card, ...prev.filter((c) => c.id !== last.card.id)]);
   }
@@ -1044,6 +1055,8 @@ export default function Home() {
     () => Array.from(new Set([...userTags, ...favorites.flatMap((f) => f.tags || [])])),
     [userTags, favorites]
   );
+
+  const activeAutoTags = useMemo(() => autoTagsRaw.filter((t) => existingAllTags.includes(t)), [autoTagsRaw, existingAllTags]);
 
   /** お気に入り操作 */
   function deleteFavorite(id: string) {
@@ -1373,16 +1386,49 @@ export default function Home() {
       {/* 絞り込み */}
       <div style={{ width: 360, maxWidth: '100%' }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button onClick={() => setFilterOpen((o) => !o)} style={{ ...chipBase(filterActive), display: 'inline-flex', gap: 6 }}>
+          <button onClick={() => { setFilterOpen((o) => !o); setTagPickOpen(false); }} style={{ ...chipBase(filterActive), display: 'inline-flex', gap: 6 }}>
             絞り込み{filterActive ? '（ON）' : ''} {filterOpen ? '▲' : '▼'}
           </button>
           <button onClick={() => setFilter('openNow', !filters.openNow)} style={chipBase(filters.openNow)}>
             営業中のみ
           </button>
+          <button onClick={() => { setTagPickOpen((o) => !o); setFilterOpen(false); }}
+            style={{ ...chipBase(activeAutoTags.length > 0), display: 'inline-flex', gap: 4, minWidth: 0 }}>
+            🏷 {activeAutoTags.length === 0 ? '自動タグ' : activeAutoTags.length === 1 ? activeAutoTags[0] : `${activeAutoTags[0]} +${activeAutoTags.length - 1}`}
+          </button>
           {filterActive && (
             <button onClick={() => setFiltersRaw(DEFAULT_FILTERS)} style={{ ...smallBtn, borderRadius: 999 }}>解除</button>
           )}
         </div>
+        {tagPickOpen && (
+          <div style={{
+            position: 'absolute', left: 16, right: 16, top: '100%', marginTop: 6, zIndex: 70,
+            background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: 14,
+            boxShadow: '0 12px 32px rgba(0,0,0,0.18)', maxHeight: '50dvh', overflowY: 'auto',
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>右スワイプで保存するとき、自動で付けるタグ</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>選んだタグが、保存したお店に付きます（複数OK）</div>
+            {existingAllTags.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>タグがまだありません。保存済みタブで作れます。</div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {existingAllTags.map((t) => {
+                  const on = activeAutoTags.includes(t);
+                  return (
+                    <button key={t} onClick={() => setAutoTags(on ? activeAutoTags.filter((x) => x !== t) : [...activeAutoTags, t])}
+                      style={{ ...chipBase(on), display: 'inline-flex', gap: 4 }}>
+                      {tagIcons[t] ? `${tagIcons[t]} ` : ''}{t}{on ? ' ✓' : ''}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              {activeAutoTags.length > 0 && <button onClick={() => setAutoTags([])} style={{ ...smallBtn, borderRadius: 999 }}>選択を外す</button>}
+              <button onClick={() => setTagPickOpen(false)} style={{ ...smallBtn, borderRadius: 999, marginLeft: 'auto' }}>閉じる</button>
+            </div>
+          </div>
+        )}
         {filterOpen && (
           <div style={{
             position: 'absolute', left: 16, right: 16, top: '100%', marginTop: 6, zIndex: 70,
