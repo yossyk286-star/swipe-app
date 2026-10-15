@@ -374,7 +374,8 @@ export default function SavedView(props: SavedViewProps) {
   const [openList, setOpenList] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortMode>('new');
-  const [rating4, setRating4] = useState(false);
+  const [minRating, setMinRating] = useState(0);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -415,12 +416,14 @@ export default function SavedView(props: SavedViewProps) {
 
   // 開いているタグが削除・名前変更で無くなったら一覧に戻す
   const openTag = openList !== null && openList !== ALL_LIST && !allTags.includes(openList) ? null : openList;
+  const isAllOpen = openTag === ALL_LIST;
   const searching = openTag === null && query.trim() !== '';
 
   function goList(id: string | null) {
     setOpenList(id);
     setQuery('');
-    setRating4(false);
+    setMinRating(0);
+    setFilterOpen(false);
     setTagFilter([]);
     setSelectMode(false);
     setSelected(new Set());
@@ -447,7 +450,7 @@ export default function SavedView(props: SavedViewProps) {
         (f.tags || []).some((t) => t.toLowerCase().includes(text))
       );
     }
-    if (rating4) arr = arr.filter((f) => (f.rating ?? 0) >= 4);
+    if (minRating > 0) arr = arr.filter((f) => (f.rating ?? 0) >= minRating);
 
     const out = [...arr];
     if (sort === 'new') return out.reverse(); // 配列は追加順なので逆順＝新しい順
@@ -457,8 +460,9 @@ export default function SavedView(props: SavedViewProps) {
       const db = distanceTo(userPos, b.lat, b.lng);
       return (da ?? Infinity) - (db ?? Infinity);
     });
-  }, [favorites, openTag, searching, query, rating4, sort, userPos, tagFilter, allTags]);
+  }, [favorites, openTag, searching, query, minRating, sort, userPos, tagFilter, allTags]);
 
+  const filterActive = minRating > 0 || (isAllOpen && tagFilter.length > 0);
   const selectedVisible = rows.filter((f) => selected.has(f.id)).map((f) => f.id);
 
   function toggleSelect(id: string) {
@@ -570,35 +574,73 @@ export default function SavedView(props: SavedViewProps) {
           {([['new', '新しい順'], ['rating', '評価順'], ['near', '近い順']] as [SortMode, string][]).map(([k, label]) => (
             <button key={k} onClick={() => setSort(k)} style={chip(sort === k)}>{label}</button>
           ))}
-          <button onClick={() => setRating4((v) => !v)} style={chip(rating4)}>★4.0以上</button>
+          <button
+            onClick={() => setFilterOpen((o) => !o)}
+            aria-expanded={filterOpen}
+            style={chip(filterActive)}
+          >
+            絞り込み{filterActive ? '（ON）' : ''} {filterOpen ? '▲' : '▼'}
+          </button>
         </div>
 
-        {isAll && allTags.length > 0 && (
-          <div className="hscroll" style={{ display: 'flex', gap: 8, margin: '8px 0 2px', overflowX: 'auto' }}>
-            <span style={{ flex: '0 0 auto', alignSelf: 'center', fontSize: 12, color: 'var(--text-muted)' }}>タグ</span>
-            {allTags.map((t) => {
-              const on = tagFilter.includes(t);
-              return (
-                <button
-                  key={t}
-                  onClick={() => setTagFilter((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]))}
-                  style={chip(on)}
-                  aria-pressed={on}
-                >
-                  {t}{tagCounts[t] ? ` ${tagCounts[t]}` : ''}
-                </button>
-              );
-            })}
-            {tagFilter.length > 0 && (
-              <button onClick={() => setTagFilter([])} style={pillBase}>解除</button>
+        {filterOpen && (
+          <div
+            style={{
+              marginTop: 8, padding: 14, borderRadius: 14, background: 'var(--card)',
+              boxShadow: '0 1px 4px var(--elev)', display: 'grid', gap: 14,
+            }}
+          >
+            <label style={{ display: 'grid', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+              評価
+              <select
+                value={minRating}
+                onChange={(e) => setMinRating(Number(e.target.value))}
+                style={{ padding: '10px 12px', fontSize: 16, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)' }}
+              >
+                <option value={0}>指定なし</option>
+                <option value={3}>★3.0以上</option>
+                <option value={3.5}>★3.5以上</option>
+                <option value={4}>★4.0以上</option>
+                <option value={4.5}>★4.5以上</option>
+              </select>
+            </label>
+
+            {isAll && allTags.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>
+                  タグ（複数選ぶと、すべてのタグが付いたお店だけ）
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {allTags.map((t) => {
+                    const on = tagFilter.includes(t);
+                    return (
+                      <button
+                        key={t}
+                        onClick={() => setTagFilter((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]))}
+                        style={chip(on)}
+                        aria-pressed={on}
+                      >
+                        {t}{tagCounts[t] ? ` ${tagCounts[t]}` : ''}{on ? ' ✓' : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              {filterActive && (
+                <button onClick={() => { setMinRating(0); setTagFilter([]); }} style={pillBase}>条件を解除</button>
+              )}
+              <button onClick={() => setFilterOpen(false)} style={{ ...pillBase, marginLeft: 'auto' }}>閉じる</button>
+            </div>
           </div>
         )}
 
         {renderRows(
           favorites.length === 0
             ? 'まだお気に入りがありません。'
-            : (query.trim() || rating4 || tagFilter.length > 0)
+            : (query.trim() || minRating > 0 || tagFilter.length > 0)
               ? '条件に合うお店がありません。'
               : 'このタグのお店はまだありません。お店の「タグ」ボタンから追加できます。'
         )}
