@@ -15,7 +15,7 @@ import { TagSheet, TagManager } from './TagSheets';
 import FavoritesMap, { MapItem } from './components/FavoritesMap';
 import SavedView from './components/SavedView';
 import { Icon, type IconName } from './components/Icons';
-import SettingsView, { ACCENTS, type AccentId, type ThemeMode } from './components/SettingsView';
+import SettingsView, { ACCENTS, DEFAULT_PREFS, type AccentId, type Prefs, type ThemeMode } from './components/SettingsView';
 import {
   ApiPlace,
   Favorite,
@@ -647,6 +647,10 @@ export default function Home() {
   const [favorites, setFavorites, favLoaded] = usePersistent<Favorite[]>(STORAGE_KEYS.favorites, []);
   const [userTags, setUserTags] = usePersistent<string[]>(STORAGE_KEYS.tags, ['カフェ', '居酒屋', 'バー']);
   const [seenIds, setSeenIds, seenLoaded] = usePersistent<string[]>(STORAGE_KEYS.seen, []);
+  const [prefsRaw, setPrefs] = usePersistent<Prefs>(STORAGE_KEYS.prefs, DEFAULT_PREFS);
+  const prefs: Prefs = useMemo(() => ({ ...DEFAULT_PREFS, ...prefsRaw }), [prefsRaw]);
+  const prefsRef = useRef<Prefs>(prefs);
+  useEffect(() => { prefsRef.current = prefs; }, [prefs]);
   const [filtersRaw, setFiltersRaw] = usePersistent<Filters>(STORAGE_KEYS.filters, DEFAULT_FILTERS);
   const filters: Filters = useMemo(() => ({ ...DEFAULT_FILTERS, ...filtersRaw }), [filtersRaw]);
   const setFilter = <K extends keyof Filters>(k: K, v: Filters[K]) => setFiltersRaw((prev) => ({ ...DEFAULT_FILTERS, ...prev, [k]: v }));
@@ -769,7 +773,7 @@ export default function Home() {
       const { cards, nextPageToken } = await fetchPlaces(params, abortRef.current.signal);
       if (myId !== searchIdRef.current) return;
 
-      const items = toCards(cards).sort((a, b) => b.photosCount - a.photosCount);
+      const items = toCards(cards, prefsRef.current.showNoPhoto).sort((a, b) => b.photosCount - a.photosCount);
       const ex = excludedIds();
       const fresh = items.filter((c) => !ex.has(c.id));
 
@@ -810,7 +814,7 @@ export default function Home() {
     try {
       const { cards, nextPageToken } = await fetchPlaces(new URLSearchParams({ pagetoken: nextToken }));
       if (myId !== searchIdRef.current) return;
-      const items = toCards(cards).sort((a, b) => b.photosCount - a.photosCount);
+      const items = toCards(cards, prefsRef.current.showNoPhoto).sort((a, b) => b.photosCount - a.photosCount);
       const ex = excludedIds();
       setDeck((prev) => {
         const ids = new Set(prev.map((c) => c.id));
@@ -874,6 +878,9 @@ export default function Home() {
   /** スワイプ・やり直し */
   function handleSwipe(card: PlaceCard, dir: SwipeDir) {
     setExitDir(dir);
+    if (prefsRef.current.haptics && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(dir === 'right' ? 25 : 12);
+    }
     const already = favorites.some((f) => f.id === card.id);
     if (dir === 'right') {
       if (!already) setFavorites((prev) => (prev.some((p) => p.id === card.id) ? prev : [...prev, { ...card, tags: [], addedAt: Date.now() }]));
@@ -1365,7 +1372,7 @@ export default function Home() {
       </div>
 
       {/* 操作ボタン（戻す / NOPE / 詳細 / LIKE） */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexDirection: prefs.leftHanded ? 'row-reverse' : 'row', alignItems: 'center', gap: 18, flexShrink: 0 }}>
         <button onClick={undo} disabled={history.length === 0} aria-label="ひとつ戻す" title="ひとつ戻す（Backspace）"
           style={{ ...actionBtn('#f59e0b', 44), opacity: history.length === 0 ? 0.4 : 1 }}>↺</button>
         <button onClick={() => top && handleSwipe(top, 'left')} disabled={!top || loading} aria-label="見送る" title="見送る（←）"
@@ -1400,6 +1407,8 @@ export default function Home() {
           onTheme={setTheme}
           accent={accent}
           onAccent={setAccent}
+          prefs={prefs}
+          onPrefs={setPrefs}
           favoritesCount={favorites.length}
           seenCount={seenIds.length}
           onExport={exportBackup}

@@ -1,9 +1,17 @@
 'use client';
 
 // 設定画面：テーマ・アクセントカラー・データ（バックアップ／見送り履歴）
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 export type ThemeMode = 'auto' | 'light' | 'dark';
+
+/** スワイプまわりの設定 */
+export type Prefs = {
+  showNoPhoto: boolean; // 写真のないお店も出す
+  leftHanded: boolean;  // ボタンの並びを左右反転（左手用）
+  haptics: boolean;     // スワイプ時の振動
+};
+export const DEFAULT_PREFS: Prefs = { showNoPhoto: false, leftHanded: false, haptics: true };
 
 export const ACCENTS = [
   { id: 'blue', name: 'ブルー', light: '#1a73e8', dark: '#8ab4f8' },
@@ -32,13 +40,43 @@ const action: React.CSSProperties = {
   background: 'transparent', color: 'var(--text)', fontSize: 13,
 };
 
+function ToggleRow({ label, desc, on, onChange }: { label: string; desc: string; on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>{label}</div>
+        <div className="jp-text" style={{ ...hint, marginTop: 4 }}>{desc}</div>
+      </div>
+      <button
+        role="switch"
+        aria-checked={on}
+        aria-label={label}
+        onClick={() => onChange(!on)}
+        style={{
+          flex: '0 0 auto', width: 52, height: 32, borderRadius: 16, border: 'none', padding: 3, position: 'relative',
+          background: on ? 'var(--accent)' : 'var(--chip)', transition: 'background .15s',
+        }}
+      >
+        <span
+          style={{
+            display: 'block', width: 26, height: 26, borderRadius: 13, background: '#fff',
+            boxShadow: '0 1px 3px rgba(0,0,0,.35)', transform: `translateX(${on ? 20 : 0}px)`, transition: 'transform .15s',
+          }}
+        />
+      </button>
+    </div>
+  );
+}
+
 export default function SettingsView({
-  theme, onTheme, accent, onAccent, favoritesCount, seenCount, onExport, onImport, onResetSeen,
+  theme, onTheme, accent, onAccent, prefs, onPrefs, favoritesCount, seenCount, onExport, onImport, onResetSeen,
 }: {
   theme: ThemeMode;
   onTheme: (t: ThemeMode) => void;
   accent: AccentId;
   onAccent: (a: AccentId) => void;
+  prefs: Prefs;
+  onPrefs: (p: Prefs) => void;
   favoritesCount: number;
   seenCount: number;
   onExport: () => void;
@@ -46,6 +84,9 @@ export default function SettingsView({
   onResetSeen: () => void;
 }) {
   const importRef = useRef<HTMLInputElement | null>(null);
+  const [canVibrate, setCanVibrate] = useState(true);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setCanVibrate(typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function'); }, []);
 
   return (
     <div>
@@ -80,6 +121,37 @@ export default function SettingsView({
           })}
         </div>
         <div style={hint}>選択中：{ACCENTS.find((a) => a.id === accent)?.name}</div>
+      </section>
+
+      <section style={section}>
+        <div style={heading}>スワイプ</div>
+
+        <ToggleRow
+          label="写真のないお店も出す"
+          desc="オフのときは、写真のないお店を出しません。変更は次の検索から反映されます。"
+          on={prefs.showNoPhoto}
+          onChange={(v) => onPrefs({ ...prefs, showNoPhoto: v })}
+        />
+
+        <div style={{ height: 1, background: 'var(--border)', margin: '14px 0' }} />
+
+        <div style={{ fontSize: 14, fontWeight: 600 }}>ボタンの位置</div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button onClick={() => onPrefs({ ...prefs, leftHanded: false })} style={pill(!prefs.leftHanded)} aria-pressed={!prefs.leftHanded}>右手用</button>
+          <button onClick={() => onPrefs({ ...prefs, leftHanded: true })} style={pill(prefs.leftHanded)} aria-pressed={prefs.leftHanded}>左手用</button>
+        </div>
+        <div style={hint}>
+          右手用は「✕」が左、「♥」が右です。左手用は左右を入れ替えます。
+        </div>
+
+        <div style={{ height: 1, background: 'var(--border)', margin: '14px 0' }} />
+
+        <ToggleRow
+          label="振動（触覚）"
+          desc={canVibrate ? 'スワイプしたときに、軽く振動します。' : 'この端末（iPhoneのSafariなど）は、ブラウザが振動に対応していないため、オンにしても動きません。'}
+          on={prefs.haptics}
+          onChange={(v) => onPrefs({ ...prefs, haptics: v })}
+        />
       </section>
 
       <section style={section}>

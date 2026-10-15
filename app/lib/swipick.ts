@@ -69,16 +69,16 @@ export const getRefFromImageUrl = (u: string) => {
   }
 };
 
-/** API の結果をカードに変換（写真のないお店は除外） */
-export function toCards(raw: ApiPlace[]): PlaceCard[] {
+/** API の結果をカードに変換（既定では写真のないお店は除外） */
+export function toCards(raw: ApiPlace[], includeNoPhoto = false): PlaceCard[] {
   return raw
-    .filter((p) => !!p.photoRef && !!p.placeId)
+    .filter((p) => !!p.placeId && (includeNoPhoto || !!p.photoRef))
     .map((p) => ({
       id: p.placeId as string,
       name: p.name ?? '名称不明',
-      image: photoUrl(p.photoRef as string),
+      image: p.photoRef ? photoUrl(p.photoRef) : '',
       openNow: p.openNow ?? null,
-      photosCount: typeof p.photosCount === 'number' ? p.photosCount : 1,
+      photosCount: typeof p.photosCount === 'number' ? p.photosCount : p.photoRef ? 1 : 0,
       photoRefs: p.photoRefs ?? [],
       currentIdx: 0,
       address: p.address ?? null,
@@ -289,4 +289,5 @@ export const STORAGE_KEYS = {
   filters: 'filters_v1',
   theme: 'theme',
   accent: 'accent_v1',
+  prefs: 'prefs_v1',
 } as const;
