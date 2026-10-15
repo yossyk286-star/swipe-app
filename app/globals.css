@@ -93,3 +93,17 @@ button:disabled {
 .jp-title {
   text-wrap: balance;
 }
+
+/* Googleマップの吹き出しの×ボタンを小さめに */
+.gm-style .gm-style-iw-chr {
+  height: 28px;
+}
+.gm-style .gm-style-iw-chr .gm-ui-hover-effect {
+  width: 28px !important;
+  height: 28px !important;
+}
+.gm-style .gm-style-iw-chr .gm-ui-hover-effect > span {
+  width: 14px !important;
+  height: 14px !important;
+  margin: 7px !important;
+}

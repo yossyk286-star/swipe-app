@@ -21,6 +21,7 @@ import {
   LatLng,
   NAV_HEIGHT,
   NAV_OFFSET,
+  typeLabel,
   shortAddress,
   PlaceCard,
   PlaceDetails,
@@ -615,6 +616,7 @@ export default function Home() {
   type MainTab = 'search' | 'saved' | 'map';
   const [tab, setTab] = useState<MainTab>('search');
   const [mapTag, setMapTag] = useState<string | null>(null);
+  const [mapQuery, setMapQuery] = useState('');
 
   // タグ編集シートの対象（お店のID。複数ならまとめて編集）／タグ管理
   const [tagSheetIds, setTagSheetIds] = useState<string[]>([]);
@@ -897,8 +899,19 @@ export default function Home() {
   /** 地図タブ */
   const effMapTag = mapTag !== null && existingAllTags.includes(mapTag) ? mapTag : null;
   const mapFavorites = useMemo(
-    () => (effMapTag !== null ? favorites.filter((f) => f.tags?.includes(effMapTag)) : favorites),
-    [favorites, effMapTag]
+    () => {
+      let arr = effMapTag !== null ? favorites.filter((f) => f.tags?.includes(effMapTag)) : favorites;
+      // フリーワード：スペース区切りは AND（店名・住所・タグ・ジャンルが対象）
+      const words = mapQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      if (words.length > 0) {
+        arr = arr.filter((f) => {
+          const hay = [f.name, f.address ?? '', typeLabel(f.types), ...(f.tags ?? [])].join(' ').toLowerCase();
+          return words.every((w) => hay.includes(w));
+        });
+      }
+      return arr;
+    },
+    [favorites, effMapTag, mapQuery]
   );
   const mapItems: MapItem[] = useMemo(() => mapFavorites
     .filter((f) => f.lat != null && f.lng != null)
@@ -1286,6 +1299,31 @@ export default function Home() {
       {tab === 'map' && (
         <div style={{ maxWidth: 560, margin: '0 auto', padding: '16px 16px 24px', boxSizing: 'border-box' }}>
           <h1 style={{ margin: '4px 2px 12px', fontSize: 24, fontWeight: 600 }}>地図</h1>
+          <div style={{ position: 'relative', marginBottom: 10 }}>
+            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
+              <Icon name="search" size={20} />
+            </span>
+            <input
+              value={mapQuery}
+              onChange={(e) => setMapQuery(e.target.value)}
+              enterKeyHint="search"
+              placeholder="保存したお店をさがす（店名・エリア・タグ）"
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: '11px 40px', borderRadius: 999,
+                border: '1px solid var(--border)', background: 'var(--card)', fontSize: 16,
+                boxShadow: '0 2px 6px var(--elev)',
+              }}
+            />
+            {mapQuery && (
+              <button
+                onClick={() => setMapQuery('')}
+                aria-label="入力を消す"
+                style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 32, height: 32, borderRadius: 16, border: 'none', background: 'transparent', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Icon name="close" size={18} />
+              </button>
+            )}
+          </div>
           <div className="hscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 12 }}>
             <button onClick={() => setMapTag(null)} style={accentChip(effMapTag === null)}>すべて</button>
             {existingAllTags.map((t) => (
@@ -1296,7 +1334,7 @@ export default function Home() {
             items={mapItems}
             userPos={userPos}
             onOpenDetails={openDetailsById}
-            height={`max(320px, calc(100dvh - ${NAV_HEIGHT + 190}px))`}
+            height={`max(300px, calc(100dvh - ${NAV_HEIGHT + 245}px))`}
           />
           <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
             {mapItems.length}件を表示
