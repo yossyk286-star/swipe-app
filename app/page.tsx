@@ -1489,7 +1489,7 @@ export default function Home() {
           display: tab === 'search' ? 'none' : 'block',
           position: 'fixed', top: 0, left: 0, right: 0, bottom: NAV_OFFSET,
           overflowY: 'auto', overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch',
-          paddingTop: 'env(safe-area-inset-top)', boxSizing: 'border-box',
+          paddingTop: 'calc(env(safe-area-inset-top) + 16px)', boxSizing: 'border-box',
         }}
       >
       {/* ===== 設定 ===== */}
