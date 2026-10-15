@@ -69,16 +69,16 @@ export const getRefFromImageUrl = (u: string) => {
   }
 };
 
-/** API の結果をカードに変換（写真のないお店は除外） */
-export function toCards(raw: ApiPlace[]): PlaceCard[] {
+/** API の結果をカードに変換（既定では写真のないお店は除外） */
+export function toCards(raw: ApiPlace[], includeNoPhoto = false): PlaceCard[] {
   return raw
-    .filter((p) => !!p.photoRef && !!p.placeId)
+    .filter((p) => !!p.placeId && (includeNoPhoto || !!p.photoRef))
     .map((p) => ({
       id: p.placeId as string,
       name: p.name ?? '名称不明',
-      image: photoUrl(p.photoRef as string),
+      image: p.photoRef ? photoUrl(p.photoRef) : '',
       openNow: p.openNow ?? null,
-      photosCount: typeof p.photosCount === 'number' ? p.photosCount : 1,
+      photosCount: typeof p.photosCount === 'number' ? p.photosCount : p.photoRef ? 1 : 0,
       photoRefs: p.photoRefs ?? [],
       currentIdx: 0,
       address: p.address ?? null,
@@ -166,10 +166,10 @@ export function shortAddress(a: string | null | undefined): string {
 }
 
 /** 下タブの高さ（px）。固定バーやトーストの位置合わせに使う */
-export const NAV_HEIGHT = 64;
+export const NAV_HEIGHT = 56;
 
 /** 下タブ全体の高さ（CSS式）。余白を詰めた分を含む */
-export const NAV_OFFSET = 'calc(64px + env(safe-area-inset-bottom) * 0.4)';
+export const NAV_OFFSET = 'calc(56px + env(safe-area-inset-bottom) * 0.4)';
 
 /** ------------ Googleマップへのリンク ------------ */
 export function mapsPlaceUrl(name: string, placeId?: string) {
@@ -288,4 +288,6 @@ export const STORAGE_KEYS = {
   seen: 'seen_ids_v1',
   filters: 'filters_v1',
   theme: 'theme',
+  accent: 'accent_v1',
+  prefs: 'prefs_v1',
 } as const;

@@ -15,6 +15,7 @@ import { TagSheet, TagManager } from './TagSheets';
 import FavoritesMap, { MapItem } from './components/FavoritesMap';
 import SavedView from './components/SavedView';
 import { Icon, type IconName } from './components/Icons';
+import SettingsView, { ACCENTS, DEFAULT_PREFS, type AccentId, type Prefs, type ThemeMode } from './components/SettingsView';
 import {
   ApiPlace,
   Favorite,
@@ -240,6 +241,9 @@ function DetailsModal({
 }: { open: boolean; onClose: () => void; placeId: string; fallbackName?: string }) {
   const [loading, setLoading] = useState(false);
   const [d, setD] = useState<PlaceDetails | null>(null);
+  // 写真の拡大表示（表示中の写真の番号。null=閉じている）
+  const [zoomIdx, setZoomIdx] = useState<number | null>(null);
+  const touchX = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open || !placeId) return;
@@ -247,6 +251,7 @@ function DetailsModal({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setD(null);
+    setZoomIdx(null);
     fetchDetails(placeId)
       .then((res) => { if (!cancelled) setD(res); })
       .catch(() => { if (!cancelled) setD(null); })
@@ -254,13 +259,23 @@ function DetailsModal({
     return () => { cancelled = true; };
   }, [open, placeId]);
 
-  // Esc で閉じる
+  const photoCount = Math.min(6, d?.photoRefs?.length ?? 0);
+  const stepZoom = useCallback((delta: number) => {
+    setZoomIdx((cur) => (cur === null || photoCount === 0 ? cur : (cur + delta + photoCount) % photoCount));
+  }, [photoCount]);
+
+  // Esc で閉じる（拡大表示中は拡大だけ閉じる）／拡大中は ← → で写真を切り替え
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (zoomIdx !== null) setZoomIdx(null); else onClose();
+      } else if (zoomIdx !== null && e.key === 'ArrowRight') stepZoom(1);
+      else if (zoomIdx !== null && e.key === 'ArrowLeft') stepZoom(-1);
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, zoomIdx, stepZoom]);
 
   if (!open) return null;
 
@@ -371,7 +386,8 @@ function DetailsModal({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
                   {d.photoRefs.slice(0, 6).map((ref, i) => (
                     <img key={ref} src={photoUrl(ref, 600)} alt={`${name} の写真 ${i + 1}`} loading="lazy"
-                      style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8 }} />
+                      onClick={() => setZoomIdx(i)}
+                      style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, cursor: 'zoom-in' }} />
                   ))}
                 </div>
               </>
@@ -380,6 +396,65 @@ function DetailsModal({
         )}
         {!loading && !d && <div style={{ padding: '24px 0' }}>情報を取得できませんでした。少し待ってから開き直してください。</div>}
       </div>
+
+      {/* 写真の拡大表示 */}
+      {zoomIdx !== null && d?.photoRefs?.[zoomIdx] && (
+        <div
+          role="dialog"
+          aria-label="写真の拡大表示"
+          onClick={(e) => { e.stopPropagation(); setZoomIdx(null); }}
+          onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
+          onTouchEnd={(e) => {
+            const sx = touchX.current;
+            touchX.current = null;
+            if (sx === null) return;
+            const dx = e.changedTouches[0].clientX - sx;
+            if (Math.abs(dx) > 50) stepZoom(dx < 0 ? 1 : -1);
+          }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 5000, background: 'rgba(0,0,0,0.94)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <img
+            src={photoUrl(d.photoRefs[zoomIdx], 1200)}
+            alt={`${name} の写真 ${zoomIdx + 1}`}
+            style={{ maxWidth: '100vw', maxHeight: '100dvh', objectFit: 'contain', display: 'block' }}
+          />
+          <button
+            onClick={(e) => { e.stopPropagation(); setZoomIdx(null); }}
+            aria-label="閉じる"
+            style={{
+              position: 'absolute', top: 'max(12px, env(safe-area-inset-top))', right: 12, width: 44, height: 44, borderRadius: 22,
+              background: 'rgba(255,255,255,0.18)', border: 'none', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Icon name="close" size={24} />
+          </button>
+          {photoCount > 1 && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); stepZoom(-1); }}
+                aria-label="前の写真"
+                style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%) scaleX(-1)', width: 44, height: 44, borderRadius: 22, background: 'rgba(255,255,255,0.18)', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Icon name="chevronRight" size={26} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); stepZoom(1); }}
+                aria-label="次の写真"
+                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 44, height: 44, borderRadius: 22, background: 'rgba(255,255,255,0.18)', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Icon name="chevronRight" size={26} />
+              </button>
+              <div style={{ position: 'absolute', bottom: 'max(16px, env(safe-area-inset-bottom))', left: 0, right: 0, textAlign: 'center', color: '#fff', fontSize: 13 }}>
+                {zoomIdx + 1} / {photoCount}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -572,6 +647,10 @@ export default function Home() {
   const [favorites, setFavorites, favLoaded] = usePersistent<Favorite[]>(STORAGE_KEYS.favorites, []);
   const [userTags, setUserTags] = usePersistent<string[]>(STORAGE_KEYS.tags, ['カフェ', '居酒屋', 'バー']);
   const [seenIds, setSeenIds, seenLoaded] = usePersistent<string[]>(STORAGE_KEYS.seen, []);
+  const [prefsRaw, setPrefs] = usePersistent<Prefs>(STORAGE_KEYS.prefs, DEFAULT_PREFS);
+  const prefs: Prefs = useMemo(() => ({ ...DEFAULT_PREFS, ...prefsRaw }), [prefsRaw]);
+  const prefsRef = useRef<Prefs>(prefs);
+  useEffect(() => { prefsRef.current = prefs; }, [prefs]);
   const [filtersRaw, setFiltersRaw] = usePersistent<Filters>(STORAGE_KEYS.filters, DEFAULT_FILTERS);
   const filters: Filters = useMemo(() => ({ ...DEFAULT_FILTERS, ...filtersRaw }), [filtersRaw]);
   const setFilter = <K extends keyof Filters>(k: K, v: Filters[K]) => setFiltersRaw((prev) => ({ ...DEFAULT_FILTERS, ...prev, [k]: v }));
@@ -613,8 +692,36 @@ export default function Home() {
   const closeDetails = useCallback(() => setDetailsOpen(false), []);
 
   // 下タブ（探す / 保存済み / 地図）
-  type MainTab = 'search' | 'saved' | 'map';
+  type MainTab = 'settings' | 'search' | 'saved' | 'map';
   const [tab, setTab] = useState<MainTab>('search');
+  // テーマ・テーマカラー（設定画面）
+  const [themeRaw, setTheme, themeLoaded] = usePersistent<ThemeMode>(STORAGE_KEYS.theme, 'auto');
+  const [accentRaw, setAccent, accentLoaded] = usePersistent<AccentId>(STORAGE_KEYS.accent, 'blue');
+  const theme: ThemeMode = themeRaw === 'light' || themeRaw === 'dark' ? themeRaw : 'auto';
+  const accent: AccentId = ACCENTS.some((a) => a.id === accentRaw) ? accentRaw : 'blue';
+  useEffect(() => {
+    if (!themeLoaded || !accentLoaded) return; // 読み込み前に上書きしない（ちらつき防止）
+    const root = document.documentElement;
+    if (theme === 'auto') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', theme);
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      const a = ACCENTS.find((x) => x.id === accent);
+      if (!a || a.id === 'blue') {
+        root.style.removeProperty('--accent');
+        root.style.removeProperty('--accent-bg');
+        return;
+      }
+      const dark = theme === 'dark' || (theme === 'auto' && mq.matches);
+      const c = dark ? a.dark : a.light;
+      root.style.setProperty('--accent', c);
+      root.style.setProperty('--accent-bg', `color-mix(in srgb, ${c} ${dark ? 18 : 14}%, transparent)`);
+    };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [theme, accent, themeLoaded, accentLoaded]);
+
   const [mapTag, setMapTag] = useState<string | null>(null);
   const [mapQuery, setMapQuery] = useState('');
 
@@ -666,7 +773,7 @@ export default function Home() {
       const { cards, nextPageToken } = await fetchPlaces(params, abortRef.current.signal);
       if (myId !== searchIdRef.current) return;
 
-      const items = toCards(cards).sort((a, b) => b.photosCount - a.photosCount);
+      const items = toCards(cards, prefsRef.current.showNoPhoto).sort((a, b) => b.photosCount - a.photosCount);
       const ex = excludedIds();
       const fresh = items.filter((c) => !ex.has(c.id));
 
@@ -707,7 +814,7 @@ export default function Home() {
     try {
       const { cards, nextPageToken } = await fetchPlaces(new URLSearchParams({ pagetoken: nextToken }));
       if (myId !== searchIdRef.current) return;
-      const items = toCards(cards).sort((a, b) => b.photosCount - a.photosCount);
+      const items = toCards(cards, prefsRef.current.showNoPhoto).sort((a, b) => b.photosCount - a.photosCount);
       const ex = excludedIds();
       setDeck((prev) => {
         const ids = new Set(prev.map((c) => c.id));
@@ -732,10 +839,11 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [favLoaded, seenLoaded]);
 
-  // 残りが少なくなったら続きを取得
+  // 続きのページ（最大60件）を先読みする。残りが少ないときは即、そうでなければ少し待ってから
   useEffect(() => {
     if (loading || !nextToken) return;
-    if (shownDeck.length <= PREFETCH_WHEN_LEFT) loadMore();
+    const t = setTimeout(loadMore, shownDeck.length <= PREFETCH_WHEN_LEFT ? 0 : 2000);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownDeck.length, nextToken, loading]);
 
@@ -770,6 +878,9 @@ export default function Home() {
   /** スワイプ・やり直し */
   function handleSwipe(card: PlaceCard, dir: SwipeDir) {
     setExitDir(dir);
+    if (prefsRef.current.haptics && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(dir === 'right' ? 25 : 12);
+    }
     const already = favorites.some((f) => f.id === card.id);
     if (dir === 'right') {
       if (!already) setFavorites((prev) => (prev.some((p) => p.id === card.id) ? prev : [...prev, { ...card, tags: [], addedAt: Date.now() }]));
@@ -1101,10 +1212,20 @@ export default function Home() {
         style={{
           display: tab === 'search' ? 'flex' : 'none',
           flexDirection: 'column', alignItems: 'center', gap: 10,
-          padding: 'max(12px, env(safe-area-inset-top)) 16px 8px',
+          padding: '0 16px 8px', boxSizing: 'border-box',
+          // 画面に収める（スクロール不要）。絞り込みパネルを開いたときだけ中でスクロール
+          height: `calc(100dvh - ${NAV_OFFSET})`, overflowY: 'auto', overscrollBehavior: 'contain',
         }}
       >
-      {/* 検索 */}
+      {/* 検索・絞り込み（スクロールしても上に残す） */}
+      <div
+        style={{
+          position: 'sticky', top: 0, zIndex: 60, alignSelf: 'stretch', flexShrink: 0, margin: '0 -16px',
+          padding: 'max(12px, env(safe-area-inset-top)) 16px 10px', background: 'var(--bg)',
+          borderBottom: '1px solid var(--border)', boxShadow: '0 4px 10px var(--elev)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+        }}
+      >
       <form
         onSubmit={(e) => { e.preventDefault(); search(q); }}
         style={{ display: 'flex', gap: 8, width: 360, maxWidth: '100%' }}
@@ -1114,7 +1235,11 @@ export default function Home() {
           onChange={(e) => setQ(e.target.value)}
           enterKeyHint="search"
           placeholder="例：梅田 居酒屋 / なんば カフェ"
-          style={{ flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 16 }}
+          style={{
+            flex: 1, minWidth: 0, padding: '12px 14px', borderRadius: 12, fontSize: 16,
+            border: '2px solid var(--text-muted)', background: 'var(--card)', color: 'var(--text)',
+            boxShadow: '0 2px 8px var(--elev)',
+          }}
         />
         <button type="submit" disabled={loading}
           style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--primary)', color: 'var(--bg)', border: 'none', minWidth: 72, fontWeight: 700 }}>
@@ -1175,6 +1300,8 @@ export default function Home() {
         )}
       </div>
 
+      </div>
+
       {/* エラー */}
       {error && (
         <div role="alert" style={{
@@ -1188,7 +1315,7 @@ export default function Home() {
       )}
 
       {/* スワイプスタック */}
-      <div style={{ position: 'relative', width: 360, maxWidth: '100%', height: 'clamp(340px, calc(100dvh - 320px), 560px)' }}>
+      <div style={{ position: 'relative', width: 360, maxWidth: '100%', flex: '1 1 0', minHeight: 240 }}>
         {loading && (
           <div style={{
             position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
@@ -1245,7 +1372,7 @@ export default function Home() {
       </div>
 
       {/* 操作ボタン（戻す / NOPE / 詳細 / LIKE） */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 2 }}>
+      <div style={{ display: 'flex', flexDirection: prefs.leftHanded ? 'row-reverse' : 'row', alignItems: 'center', gap: 18, flexShrink: 0 }}>
         <button onClick={undo} disabled={history.length === 0} aria-label="ひとつ戻す" title="ひとつ戻す（Backspace）"
           style={{ ...actionBtn('#f59e0b', 44), opacity: history.length === 0 ? 0.4 : 1 }}>↺</button>
         <button onClick={() => top && handleSwipe(top, 'left')} disabled={!top || loading} aria-label="見送る" title="見送る（←）"
@@ -1258,14 +1385,36 @@ export default function Home() {
 
       {/* 残り件数 */}
       {stats && !loading && (
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -4 }}>
-          残り {shownDeck.length}件
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>
+          残り {shownDeck.length}件{nextToken ? '＋' : ''}
           {deck.length !== shownDeck.length && `（絞り込みで${deck.length - shownDeck.length}件非表示）`}
           {loadingMore && ' ・続きを読み込み中…'}
           {stats.hidden > 0 && ` ・見送り/保存済み${stats.hidden}件を除外`}
         </div>
       )}
 
+      </div>
+
+      {/* ===== 設定 ===== */}
+      <div
+        style={{
+          display: tab === 'settings' ? 'block' : 'none',
+          maxWidth: 560, margin: '0 auto', padding: '16px 16px 24px', boxSizing: 'border-box',
+        }}
+      >
+        <SettingsView
+          theme={theme}
+          onTheme={setTheme}
+          accent={accent}
+          onAccent={setAccent}
+          prefs={prefs}
+          onPrefs={setPrefs}
+          favoritesCount={favorites.length}
+          seenCount={seenIds.length}
+          onExport={exportBackup}
+          onImport={importBackup}
+          onResetSeen={resetSeen}
+        />
       </div>
 
       {/* ===== 保存済み（Googleマップの「保存済み」風） ===== */}
@@ -1280,7 +1429,6 @@ export default function Home() {
           allTags={existingAllTags}
           tagCounts={tagCounts}
           userPos={userPos}
-          seenCount={seenIds.length}
           onOpenDetails={openDetails}
           onEditTags={(ids) => setTagSheetIds(ids)}
           onDelete={deleteFavorite}
@@ -1288,9 +1436,6 @@ export default function Home() {
           onShowOnMap={(tag) => { setMapTag(tag); selectTab('map'); }}
           onCreateTag={createTag}
           onManageTags={() => setTagManagerOpen(true)}
-          onExport={exportBackup}
-          onImport={importBackup}
-          onResetSeen={resetSeen}
           onGoSearch={() => selectTab('search')}
         />
       </div>
@@ -1354,6 +1499,7 @@ export default function Home() {
       >
         <div style={{ maxWidth: 560, margin: '0 auto', height: NAV_HEIGHT, display: 'flex', justifyContent: 'center' }}>
           {([
+            ['settings', '設定', 'settings'],
             ['search', '探す', 'search'],
             ['saved', '保存済み', 'bookmark'],
             ['map', '地図', 'map'],
@@ -1365,7 +1511,7 @@ export default function Home() {
                 onClick={() => selectTab(key)}
                 aria-current={active ? 'page' : undefined}
                 style={{
-                  flex: '0 0 112px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, padding: 0,
+                  flex: '0 0 84px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, padding: 0,
                   background: 'transparent', border: 'none',
                   color: active ? 'var(--accent)' : 'var(--text-muted)',
                   fontSize: 12, fontWeight: active ? 700 : 500,

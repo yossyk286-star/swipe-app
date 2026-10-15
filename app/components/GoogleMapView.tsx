@@ -71,7 +71,10 @@ export default function GoogleMapView({
           center: { lat: 34.7025, lng: 135.4959 },
           zoom: 13,
           mapId: MAP_ID,
-          colorScheme: 'FOLLOW_SYSTEM',
+          colorScheme:
+            document.documentElement.getAttribute('data-theme') === 'dark' ? 'DARK'
+              : document.documentElement.getAttribute('data-theme') === 'light' ? 'LIGHT'
+              : 'FOLLOW_SYSTEM',
           gestureHandling: 'greedy',
           mapTypeControl: false,
           streetViewControl: false,
