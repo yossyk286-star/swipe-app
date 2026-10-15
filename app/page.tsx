@@ -1059,7 +1059,9 @@ export default function Home() {
   );
 
   /** 地図タブ */
-  const effMapTag = mapTag !== null && existingAllTags.includes(mapTag) ? mapTag : null;
+  // 地図のタグ：保存済みのお店が1件もないタグは出さない
+  const mapTags = useMemo(() => existingAllTags.filter((t) => (tagCounts[t] ?? 0) > 0), [existingAllTags, tagCounts]);
+  const effMapTag = mapTag !== null && mapTags.includes(mapTag) ? mapTag : null;
   const mapFavorites = useMemo(
     () => {
       let arr = effMapTag !== null ? favorites.filter((f) => f.tags?.includes(effMapTag)) : favorites;
@@ -1527,7 +1529,7 @@ export default function Home() {
           </div>
           <div className="hscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 12 }}>
             <button onClick={() => setMapTag(null)} style={accentChip(effMapTag === null)}>すべて</button>
-            {existingAllTags.map((t) => (
+            {mapTags.map((t) => (
               <button key={t} onClick={() => setMapTag(t)} style={accentChip(effMapTag === t)}>{tagIcons[t] ? `${tagIcons[t]} ` : ''}{t}</button>
             ))}
           </div>

@@ -337,7 +337,7 @@ function PlaceRow({
             <Icon name="label" size={18} />
             タグ
           </button>
-          <button onClick={onDelete} style={pillBase} aria-label={`${f.name} を削除`}>
+          <button onClick={onDelete} style={{ ...pillBase, marginLeft: 'auto' }} aria-label={`${f.name} を削除`}>
             <Icon name="delete" size={18} />
             削除
           </button>
