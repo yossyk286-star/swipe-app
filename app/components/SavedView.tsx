@@ -6,7 +6,7 @@
 //   ① タグの一覧（あなたのタグ）  ② タグを開いた中身（お店の一覧）
 // タグは Google マップの「リスト」に当たる。
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Favorite,
   LatLng,
@@ -380,6 +380,25 @@ export default function SavedView(props: SavedViewProps) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
 
+  // 左にスワイプで、ひとつ上の階層（タグの一覧）へ戻る
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const swipeBackProps = {
+    onTouchStart: (e: React.TouchEvent) => {
+      const el = e.target as Element;
+      // 横スクロールの行・入力欄の上から始めたスワイプは対象外
+      if (el.closest?.('.hscroll, input, textarea, select')) { touchStart.current = null; return; }
+      touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    },
+    onTouchEnd: (e: React.TouchEvent) => {
+      const st = touchStart.current;
+      touchStart.current = null;
+      if (!st) return;
+      const dx = e.changedTouches[0].clientX - st.x;
+      const dy = e.changedTouches[0].clientY - st.y;
+      if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.8) goList(null);
+    },
+  };
+
   // 開いているタグが削除・名前変更で無くなったら一覧に戻す
   const openTag = openList !== null && openList !== ALL_LIST && !allTags.includes(openList) ? null : openList;
   const searching = openTag === null && query.trim() !== '';
@@ -476,7 +495,7 @@ export default function SavedView(props: SavedViewProps) {
     const color = isAll ? '#ea4335' : tagColor(openTag);
 
     return (
-      <div>
+      <div {...swipeBackProps} style={{ minHeight: 'calc(100dvh - 160px)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button onClick={() => goList(null)} aria-label="戻る" style={roundBtn}>
             <Icon name="back" />
