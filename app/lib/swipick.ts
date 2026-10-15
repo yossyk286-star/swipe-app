@@ -152,11 +152,20 @@ export function typeLabel(types: string[] | undefined): string | null {
 /** 住所から「日本、」と郵便番号を取り除いて短くする */
 export function shortAddress(a: string | null | undefined): string {
   if (!a) return '';
-  return a.replace(/^日本、\s*/, '').replace(/^〒\s*\d{3}-?\d{4}\s*/, '').trim();
+  return a
+    .replace(/^日本、\s*/, '')
+    .replace(/^〒\s*[0-9０-９]{3}[-－ー]?[0-9０-９]{4}\s*/, '')
+    .replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/\u2212/g, '-')
+    .replace(/\u3000/g, ' ')
+    .trim();
 }
 
 /** 下タブの高さ（px）。固定バーやトーストの位置合わせに使う */
 export const NAV_HEIGHT = 64;
+
+/** 下タブ全体の高さ（CSS式）。余白を詰めた分を含む */
+export const NAV_OFFSET = 'calc(64px + env(safe-area-inset-bottom) * 0.4)';
 
 /** ------------ Googleマップへのリンク ------------ */
 export function mapsPlaceUrl(name: string, placeId?: string) {

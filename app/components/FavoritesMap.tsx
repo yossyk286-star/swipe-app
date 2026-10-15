@@ -6,6 +6,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import type { LatLng } from '../lib/swipick';
+import GoogleMapView from './GoogleMapView';
 
 export type MapItem = {
   id: string;
@@ -47,7 +48,7 @@ function loadLeaflet(): Promise<any> {
   return leafletPromise;
 }
 
-export default function FavoritesMap({
+function LeafletMap({
   items,
   userPos,
   onOpenDetails,
@@ -212,4 +213,17 @@ export default function FavoritesMap({
       )}
     </div>
   );
+}
+
+/** Googleマップ（キーがあれば）→ だめなら OpenStreetMap にフォールバック */
+export default function FavoritesMap(props: {
+  items: MapItem[];
+  userPos: LatLng | null;
+  onOpenDetails?: (id: string) => void;
+  height?: number | string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const hasKey = !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  if (!hasKey || failed) return <LeafletMap {...props} />;
+  return <GoogleMapView {...props} onFail={() => setFailed(true)} />;
 }

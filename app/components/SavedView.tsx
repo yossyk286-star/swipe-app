@@ -10,7 +10,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   Favorite,
   LatLng,
-  NAV_HEIGHT,
+  NAV_OFFSET,
   distanceTo,
   formatCount,
   formatDistance,
@@ -228,10 +228,11 @@ function PlaceRow({
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
+            className="jp-text jp-title"
             style={{
               fontSize: 16,
               fontWeight: 600,
-              lineHeight: 1.3,
+              lineHeight: 1.35,
               display: '-webkit-box',
               WebkitLineClamp: 2,
               WebkitBoxOrient: 'vertical',
@@ -254,13 +255,16 @@ function PlaceRow({
 
           {line2 && (
             <div
+              className="jp-text"
               style={{
                 fontSize: 13,
+                lineHeight: 1.4,
                 marginTop: 2,
                 color: 'var(--text-muted)',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
               }}
             >
               {line2}
@@ -370,8 +374,6 @@ export default function SavedView(props: SavedViewProps) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortMode>('new');
   const [rating4, setRating4] = useState(false);
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
-  const [tagMode, setTagMode] = useState<'any' | 'all'>('any');
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
@@ -381,13 +383,11 @@ export default function SavedView(props: SavedViewProps) {
   // 開いているタグが削除・名前変更で無くなったら一覧に戻す
   const openTag = openList !== null && openList !== ALL_LIST && !allTags.includes(openList) ? null : openList;
   const searching = openTag === null && query.trim() !== '';
-  const effTagFilter = useMemo(() => [...tagFilter].filter((t) => allTags.includes(t)), [tagFilter, allTags]);
 
   function goList(id: string | null) {
     setOpenList(id);
     setQuery('');
     setRating4(false);
-    setTagFilter(new Set());
     setSelectMode(false);
     setSelected(new Set());
     setCreating(false);
@@ -412,11 +412,6 @@ export default function SavedView(props: SavedViewProps) {
         (f.tags || []).some((t) => t.toLowerCase().includes(text))
       );
     }
-    if (openTag === ALL_LIST && effTagFilter.length > 0) {
-      arr = arr.filter((f) => (tagMode === 'all'
-        ? effTagFilter.every((t) => f.tags?.includes(t))
-        : effTagFilter.some((t) => f.tags?.includes(t))));
-    }
     if (rating4) arr = arr.filter((f) => (f.rating ?? 0) >= 4);
 
     const out = [...arr];
@@ -427,7 +422,7 @@ export default function SavedView(props: SavedViewProps) {
       const db = distanceTo(userPos, b.lat, b.lng);
       return (da ?? Infinity) - (db ?? Infinity);
     });
-  }, [favorites, openTag, searching, query, effTagFilter, tagMode, rating4, sort, userPos]);
+  }, [favorites, openTag, searching, query, rating4, sort, userPos]);
 
   const selectedVisible = rows.filter((f) => selected.has(f.id)).map((f) => f.id);
 
@@ -540,36 +535,12 @@ export default function SavedView(props: SavedViewProps) {
             <button key={k} onClick={() => setSort(k)} style={chip(sort === k)}>{label}</button>
           ))}
           <button onClick={() => setRating4((v) => !v)} style={chip(rating4)}>★4.0以上</button>
-          {isAll && allTags.map((t) => {
-            const active = tagFilter.has(t);
-            return (
-              <button
-                key={t}
-                onClick={() => setTagFilter((prev) => {
-                  const n = new Set(prev);
-                  if (n.has(t)) n.delete(t); else n.add(t);
-                  return n;
-                })}
-                style={chip(active)}
-              >
-                {t}
-              </button>
-            );
-          })}
         </div>
-
-        {isAll && effTagFilter.length >= 2 && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
-            タグの条件：
-            <button onClick={() => setTagMode('any')} style={chip(tagMode === 'any')}>いずれか</button>
-            <button onClick={() => setTagMode('all')} style={chip(tagMode === 'all')}>すべて含む</button>
-          </div>
-        )}
 
         {renderRows(
           favorites.length === 0
             ? 'まだお気に入りがありません。'
-            : (query.trim() || rating4 || effTagFilter.length > 0)
+            : (query.trim() || rating4)
               ? '条件に合うお店がありません。'
               : 'このタグのお店はまだありません。お店の「タグ」ボタンから追加できます。'
         )}
@@ -578,7 +549,7 @@ export default function SavedView(props: SavedViewProps) {
         {selectMode && (
           <div
             style={{
-              position: 'fixed', left: 0, right: 0, bottom: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom))`,
+              position: 'fixed', left: 0, right: 0, bottom: NAV_OFFSET,
               zIndex: 2900, background: 'var(--card)', borderTop: '1px solid var(--border)',
               boxShadow: '0 -4px 14px var(--elev)',
             }}

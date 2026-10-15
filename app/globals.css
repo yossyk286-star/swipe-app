@@ -83,3 +83,13 @@ button:disabled {
 .hscroll::-webkit-scrollbar {
   display: none;
 }
+
+/* 日本語の改行をきれいに（文節で折り返す） */
+.jp-text {
+  word-break: auto-phrase;
+  line-break: strict;
+  overflow-wrap: anywhere;
+}
+.jp-title {
+  text-wrap: balance;
+}
