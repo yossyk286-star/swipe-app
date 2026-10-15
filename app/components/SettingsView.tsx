@@ -12,8 +12,9 @@ export type Prefs = {
   haptics: boolean;     // スワイプ時の振動
   likeText: string;     // 右スワイプのスタンプ文言
   nopeText: string;     // 左スワイプのスタンプ文言
+  shuffle: boolean;     // 検索結果をランダムな順に並べる
 };
-export const DEFAULT_PREFS: Prefs = { showNoPhoto: false, leftHanded: false, haptics: true, likeText: 'LIKE', nopeText: 'NOPE' };
+export const DEFAULT_PREFS: Prefs = { showNoPhoto: false, leftHanded: false, haptics: true, likeText: 'LIKE', nopeText: 'NOPE', shuffle: true };
 
 /** スタンプ文言のプリセット */
 const STAMP_PRESETS: [string, string][] = [
@@ -139,6 +140,15 @@ export default function SettingsView({
 
       <section style={section}>
         <div style={heading}>スワイプ</div>
+
+        <ToggleRow
+          label="お店の順番をシャッフル"
+          desc="オンにすると、検索結果をランダムな順に並べます。毎回同じお店が先頭に来るのを避けられます。オフのときは、写真が多いお店から順に出します。変更は次の検索から反映されます。"
+          on={prefs.shuffle}
+          onChange={(v) => onPrefs({ ...prefs, shuffle: v })}
+        />
+
+        <div style={{ height: 1, background: 'var(--border)', margin: '14px 0' }} />
 
         <ToggleRow
           label="写真のないお店も出す"
