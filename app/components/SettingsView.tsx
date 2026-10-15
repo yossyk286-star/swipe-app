@@ -12,9 +12,10 @@ export type Prefs = {
   haptics: boolean;     // スワイプ時の振動
   likeText: string;     // 右スワイプのスタンプ文言
   nopeText: string;     // 左スワイプのスタンプ文言
-  shuffle: boolean;     // 検索結果をランダムな順に並べる
+  customLike?: string;  // 保存しておいた自分用の文言（右）
+  customNope?: string;  // 保存しておいた自分用の文言（左）
 };
-export const DEFAULT_PREFS: Prefs = { showNoPhoto: false, leftHanded: false, haptics: true, likeText: 'LIKE', nopeText: 'NOPE', shuffle: true };
+export const DEFAULT_PREFS: Prefs = { showNoPhoto: false, leftHanded: false, haptics: true, likeText: 'LIKE', nopeText: 'NOPE' };
 
 /** スタンプ文言のプリセット */
 const STAMP_PRESETS: [string, string][] = [
@@ -142,15 +143,6 @@ export default function SettingsView({
         <div style={heading}>スワイプ</div>
 
         <ToggleRow
-          label="お店の順番をシャッフル"
-          desc="オンにすると、検索結果をランダムな順に並べます。毎回同じお店が先頭に来るのを避けられます。オフのときは、写真が多いお店から順に出します。変更は次の検索から反映されます。"
-          on={prefs.shuffle}
-          onChange={(v) => onPrefs({ ...prefs, shuffle: v })}
-        />
-
-        <div style={{ height: 1, background: 'var(--border)', margin: '14px 0' }} />
-
-        <ToggleRow
           label="写真のないお店も出す"
           desc="オフのときは、写真のないお店を出しません。変更は次の検索から反映されます。"
           on={prefs.showNoPhoto}
@@ -187,6 +179,22 @@ export default function SettingsView({
               </button>
             );
           })}
+          {prefs.customLike && prefs.customNope && (() => {
+            const l = prefs.customLike, n = prefs.customNope;
+            const active = prefs.likeText === l && prefs.nopeText === n;
+            return (
+              <button
+                onClick={() => onPrefs({ ...prefs, likeText: l, nopeText: n })}
+                aria-pressed={active}
+                style={{ ...pill(active), flex: '0 0 auto', padding: '8px 12px' }}
+              >
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>★マイ文言 </span>
+                <span style={{ color: '#10b981', fontWeight: 800 }}>{l}</span>
+                <span style={{ color: 'var(--text-muted)' }}> / </span>
+                <span style={{ color: '#ef4444', fontWeight: 800 }}>{n}</span>
+              </button>
+            );
+          })()}
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <label style={{ flex: 1, minWidth: 0, display: 'grid', gap: 4, fontSize: 12, color: 'var(--text-muted)' }}>
@@ -208,7 +216,21 @@ export default function SettingsView({
             />
           </label>
         </div>
-        <div style={hint}>カードをスワイプしたときに出る文字です。自由に書き換えられます（10文字まで）。空にすると標準に戻ります。</div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => onPrefs({ ...prefs, customLike: prefs.likeText.trim() || 'LIKE', customNope: prefs.nopeText.trim() || 'NOPE' })}
+            disabled={prefs.likeText.trim() === '' && prefs.nopeText.trim() === ''}
+            style={action}
+          >
+            この文言を「マイ文言」に保存
+          </button>
+          {prefs.customLike && (
+            <button onClick={() => onPrefs({ ...prefs, customLike: undefined, customNope: undefined })} style={action}>
+              マイ文言を削除
+            </button>
+          )}
+        </div>
+        <div style={hint}>カードをスワイプしたときに出る文字です。自由に書き換えられます（10文字まで）。空にすると標準に戻ります。「マイ文言」は1つだけ保存でき、上のボタンからいつでも呼び出せます。</div>
 
         <div style={{ height: 1, background: 'var(--border)', margin: '14px 0' }} />
 
