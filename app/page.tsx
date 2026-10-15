@@ -787,18 +787,17 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // 探す画面では、ページ全体の引っ張りスクロールも止める
+  // ページ全体はスクロールさせない（各画面が自分の枠の中でスクロールする）
   useEffect(() => {
-    const lock = tab === 'search';
-    document.documentElement.style.overflow = lock ? 'hidden' : '';
-    document.body.style.overflow = lock ? 'hidden' : '';
-    document.body.style.overscrollBehavior = lock ? 'none' : '';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'none';
     return () => {
       document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
       document.body.style.overscrollBehavior = '';
     };
-  }, [tab]);
+  }, []);
 
   /** 表示中のデッキ（絞り込み適用後） */
   const shownDeck = useMemo(() => deck.filter((c) => passesFilters(c, filters, userPos)), [deck, filters, userPos]);
@@ -1106,7 +1105,7 @@ export default function Home() {
 
   function selectTab(next: MainTab) {
     setTab(next);
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+    if (typeof document !== 'undefined') document.getElementById('tab-scroller')?.scrollTo({ top: 0 });
   }
   const accentChip = (active: boolean): React.CSSProperties => ({
     ...chipBase(false),
@@ -1482,6 +1481,17 @@ export default function Home() {
 
       </div>
 
+      {/* 探す以外の画面：ページ全体ではなく、この枠の中だけがスクロールする
+          （ページ全体がスクロールすると、iPhoneのSafariが画面上部にぼかしを重ねるため） */}
+      <div
+        id="tab-scroller"
+        style={{
+          display: tab === 'search' ? 'none' : 'block',
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: NAV_OFFSET,
+          overflowY: 'auto', overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch',
+          paddingTop: 'env(safe-area-inset-top)', boxSizing: 'border-box',
+        }}
+      >
       {/* ===== 設定 ===== */}
       <div
         style={{
@@ -1575,6 +1585,8 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      </div>
 
       {/* ===== 下タブ ===== */}
       <nav

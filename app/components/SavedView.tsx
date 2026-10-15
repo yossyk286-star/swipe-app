@@ -391,7 +391,7 @@ export default function SavedView(props: SavedViewProps) {
     setSelectMode(false);
     setSelected(new Set());
     setCreating(false);
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+    if (typeof document !== 'undefined') document.getElementById('tab-scroller')?.scrollTo({ top: 0 });
   }
 
   const rows = useMemo(() => {
