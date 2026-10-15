@@ -10,6 +10,7 @@ import {
   AnimatePresence,
   PanInfo
 } from 'framer-motion';
+import { TagSheet, TagManager } from './TagSheets';
 
 /** ------------ 型 ------------ */
 type PlaceCard = {
@@ -499,6 +500,11 @@ export default function Home() {
   const [showGlobalAddBar, setShowGlobalAddBar] = useState(false);
   const [globalTagInput, setGlobalTagInput] = useState('');
 
+  // タグ編集シート（お店ごと）／タグ管理／絞り込みモード
+  const [tagSheetFavId, setTagSheetFavId] = useState<string | null>(null);
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const [favFilterMode, setFavFilterMode] = useState<'any' | 'all'>('any');
+
   const visible = useMemo(() => deck.slice(0, VISIBLE_STACK), [deck]);
   const top = visible[0];
   const visibleRest = useMemo(() => deck.slice(1, VISIBLE_STACK), [deck]);
@@ -599,17 +605,49 @@ export default function Home() {
     setSelectedFavIds(prev => { const n = new Set(prev); n.delete(id); return n; });
   }
 
-  /** 一覧：各カードの＋タグ → プロンプト */
-  function addSingleTagByPrompt(f: Favorite) {
-    const candidates = Array.from(new Set([...userTags, ...favorites.flatMap(x => x.tags || [])]));
-    const input = prompt(`追加するタグ名（既存: ${candidates.join(' / ') || 'なし'}）`, '');
-    const t = (input || '').trim();
+  /** タグ操作：お店ごとの付け外し／新規作成／全体の名前変更・削除 */
+  function toggleTagOnFavorite(id: string, tag: string) {
+    setFavorites(prev => prev.map(f => {
+      if (f.id !== id) return f;
+      const cur = f.tags || [];
+      return { ...f, tags: cur.includes(tag) ? cur.filter(t => t !== tag) : [...cur, tag] };
+    }));
+  }
+  function createTagOnFavorite(id: string, raw: string) {
+    const t = raw.trim();
     if (!t) return;
-    setFavorites(prev => prev.map(x => x.id === f.id ? { ...x, tags: Array.from(new Set([...(x.tags||[]), t])) } : x));
-    if (!userTags.includes(t)) setUserTags(prev => [...prev, t]);
+    setFavorites(prev => prev.map(f =>
+      f.id === id ? { ...f, tags: Array.from(new Set([...(f.tags || []), t])) } : f
+    ));
+    setUserTags(prev => prev.includes(t) ? prev : [...prev, t]);
+  }
+  function renameTag(oldName: string, raw: string) {
+    const n = raw.trim();
+    if (!n || n === oldName) return;
+    // 既存の別タグと同名になる場合は統合される（Set で重複除去）
+    setFavorites(prev => prev.map(f =>
+      (f.tags || []).includes(oldName)
+        ? { ...f, tags: Array.from(new Set(f.tags.map(t => t === oldName ? n : t))) }
+        : f
+    ));
+    setUserTags(prev => Array.from(new Set(prev.map(t => t === oldName ? n : t))));
+    setFavFilterTags(prev => {
+      if (!prev.has(oldName)) return prev;
+      const s = new Set(prev); s.delete(oldName); s.add(n); return s;
+    });
+  }
+  function deleteTag(tag: string) {
+    setFavorites(prev => prev.map(f =>
+      (f.tags || []).includes(tag) ? { ...f, tags: f.tags.filter(t => t !== tag) } : f
+    ));
+    setUserTags(prev => prev.filter(t => t !== tag));
+    setFavFilterTags(prev => {
+      if (!prev.has(tag)) return prev;
+      const s = new Set(prev); s.delete(tag); return s;
+    });
   }
 
-  /** お気に入りフィルタ（ANY一致） */
+  /** お気に入りフィルタ（いずれか / すべて含む） */
   const filteredFavorites = useMemo(() => {
     const text = favFilterText.trim().toLowerCase();
     const tags = favFilterTags;
@@ -617,10 +655,23 @@ export default function Home() {
       const okText = !text ||
         f.name.toLowerCase().includes(text) ||
         (f.address || '').toLowerCase().includes(text);
-      const okTags = tags.size === 0 || [...tags].some(t => f.tags?.includes(t));
+      const okTags = tags.size === 0 || (
+        favFilterMode === 'all'
+          ? [...tags].every(t => f.tags?.includes(t))
+          : [...tags].some(t => f.tags?.includes(t))
+      );
       return okText && okTags;
     });
-  }, [favorites, favFilterText, favFilterTags]);
+  }, [favorites, favFilterText, favFilterTags, favFilterMode]);
+
+  /** タグごとの件数（チップ表示・管理画面用） */
+  const tagCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const f of favorites) for (const t of f.tags || []) m[t] = (m[t] || 0) + 1;
+    return m;
+  }, [favorites]);
+
+  const tagSheetFav = tagSheetFavId ? favorites.find(f => f.id === tagSheetFavId) ?? null : null;
 
   /** まとめてタグ付け（上の小型バー） */
   const existingAllTags = useMemo(
@@ -870,32 +921,62 @@ export default function Home() {
               </div>
             )}
 
-            {/* タグフィルタチップ */}
-            <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:8 }}>
-              {Array.from(new Set([...userTags, ...favorites.flatMap(f => f.tags || [])])).map(t => {
+            {/* タグフィルタチップ（横スクロール1行・件数つき） */}
+            <div style={{ display:'flex', gap:8, flexWrap:'nowrap', overflowX:'auto', paddingBottom:6, marginBottom:4 }}>
+              {existingAllTags.map(t => {
                 const active = favFilterTags.has(t);
                 return (
                   <button
                     key={t}
-                    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-                    onClick={() => setFavFilterTags(prev => { const n = new Set(prev); active ? n.delete(t) : n.add(t); return n; })}
+                    onClick={() => setFavFilterTags(prev => {
+                      const n = new Set(prev);
+                      if (active) n.delete(t); else n.add(t);
+                      return n;
+                    })}
                     style={{
-                      padding:'4px 10px', borderRadius:999,
+                      flex:'0 0 auto', padding:'6px 12px', borderRadius:999, whiteSpace:'nowrap',
                       border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
                       background: active ? 'var(--primary)' : 'var(--card)',
-                      color: active ? 'var(--bg)' : 'var(--text)', fontSize:12, fontWeight:700
+                      color: active ? 'var(--bg)' : 'var(--text)', fontSize:13, fontWeight:700
                     }}
                   >
                     {t}
+                    <span style={{ marginLeft:6, fontSize:11, opacity:0.7 }}>{tagCounts[t] ?? 0}</span>
                   </button>
                 );
               })}
+            </div>
+
+            {/* 絞り込みの操作行：いずれか／すべて・クリア・タグ管理 */}
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+              {favFilterTags.size >= 2 && (
+                <div style={{ display:'flex', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
+                  {(['any','all'] as const).map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setFavFilterMode(m)}
+                      style={{
+                        padding:'4px 10px', fontSize:12, border:'none',
+                        background: favFilterMode === m ? 'var(--primary)' : 'var(--card)',
+                        color: favFilterMode === m ? 'var(--bg)' : 'var(--text)', fontWeight:700
+                      }}
+                    >
+                      {m === 'any' ? 'いずれか' : 'すべて含む'}
+                    </button>
+                  ))}
+                </div>
+              )}
               {favFilterTags.size > 0 && (
                 <button onClick={()=> setFavFilterTags(new Set())}
-                  style={{ padding:'4px 10px', borderRadius:999, background:'var(--chip)', border:'1px solid var(--border)', fontSize:12 }}>
+                  style={{ padding:'4px 10px', borderRadius:8, background:'var(--chip)', border:'1px solid var(--border)', fontSize:12 }}>
                   クリア
                 </button>
               )}
+              <div style={{ flex:1 }} />
+              <button onClick={()=> setTagManagerOpen(true)}
+                style={{ padding:'4px 10px', borderRadius:8, background:'var(--card)', border:'1px solid var(--border)', fontSize:12 }}>
+                タグの管理
+              </button>
             </div>
 
             {/* 一覧 */}
@@ -935,13 +1016,19 @@ export default function Home() {
                         >
                           {f.address ?? ''}
                         </div>
-                        {/* タグ表示（1行内スクロール可） */}
-                        <div style={{
-                          display:'flex', gap:6, marginTop:6, overflowX:'auto', whiteSpace:'nowrap'
-                        }}>
+                        {/* タグ表示（1行内スクロール可・タップでタグ編集） */}
+                        <div
+                          onClick={(e) => { e.stopPropagation(); setTagSheetFavId(f.id); }}
+                          style={{
+                            display:'flex', gap:6, marginTop:6, overflowX:'auto', whiteSpace:'nowrap'
+                          }}
+                        >
                           {(f.tags||[]).map(t => (
                             <span key={t} style={{ padding:'2px 6px', borderRadius:999, background:'var(--chip)', fontSize:11, flex:'0 0 auto' }}>{t}</span>
                           ))}
+                          {(f.tags||[]).length === 0 && (
+                            <span style={{ padding:'2px 6px', borderRadius:999, border:'1px dashed var(--border)', color:'var(--text-muted)', fontSize:11, flex:'0 0 auto' }}>＋タグを付ける</span>
+                          )}
                         </div>
                       </div>
 
@@ -951,14 +1038,14 @@ export default function Home() {
                         display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'space-between', padding:'8px 6px', boxSizing:'border-box'
                       }}>
                         <button
-                          title="このお店にタグを追加"
-                          onClick={() => addSingleTagByPrompt(f)}
+                          title="このお店のタグを編集"
+                          onClick={() => setTagSheetFavId(f.id)}
                           style={{
                             width:'100%', padding:'6px 0', fontSize:12,
                             border:'1px solid var(--border)', borderRadius:8, background:'var(--card)', color:'var(--text)'
                           }}
                         >
-                          ＋タグ
+                          🏷 タグ
                         </button>
                         <button
                           onClick={() => deleteFavorite(f.id)}
@@ -1054,6 +1141,29 @@ export default function Home() {
         onClose={()=>setDetailsOpen(false)}
         placeId={detailsPlaceId}
       />
+
+      {/* タグ編集シート（お店ごと） */}
+      {tagSheetFav && (
+        <TagSheet
+          title={tagSheetFav.name}
+          allTags={existingAllTags}
+          activeTags={tagSheetFav.tags || []}
+          onToggle={(t) => toggleTagOnFavorite(tagSheetFav.id, t)}
+          onCreate={(t) => createTagOnFavorite(tagSheetFav.id, t)}
+          onClose={() => setTagSheetFavId(null)}
+        />
+      )}
+
+      {/* タグ管理（名前変更・削除） */}
+      {tagManagerOpen && (
+        <TagManager
+          tags={existingAllTags}
+          counts={tagCounts}
+          onRename={renameTag}
+          onDelete={deleteTag}
+          onClose={() => setTagManagerOpen(false)}
+        />
+      )}
 
       {/* テーマCSS・スケルトンCSS */}
       <style>{`
