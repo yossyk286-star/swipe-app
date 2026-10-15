@@ -166,10 +166,10 @@ export function shortAddress(a: string | null | undefined): string {
 }
 
 /** 下タブの高さ（px）。固定バーやトーストの位置合わせに使う */
-export const NAV_HEIGHT = 64;
+export const NAV_HEIGHT = 56;
 
 /** 下タブ全体の高さ（CSS式）。余白を詰めた分を含む */
-export const NAV_OFFSET = 'calc(64px + env(safe-area-inset-bottom) * 0.4)';
+export const NAV_OFFSET = 'calc(56px + env(safe-area-inset-bottom) * 0.4)';
 
 /** ------------ Googleマップへのリンク ------------ */
 export function mapsPlaceUrl(name: string, placeId?: string) {

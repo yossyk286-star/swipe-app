@@ -1204,14 +1204,16 @@ export default function Home() {
       <div
         style={{
           display: tab === 'search' ? 'flex' : 'none',
-          flexDirection: 'column', alignItems: 'center', gap: 12,
-          padding: '0 16px 24px',
+          flexDirection: 'column', alignItems: 'center', gap: 10,
+          padding: '0 16px 8px', boxSizing: 'border-box',
+          // 画面に収める（スクロール不要）。絞り込みパネルを開いたときだけ中でスクロール
+          height: `calc(100dvh - ${NAV_OFFSET})`, overflowY: 'auto', overscrollBehavior: 'contain',
         }}
       >
       {/* 検索・絞り込み（スクロールしても上に残す） */}
       <div
         style={{
-          position: 'sticky', top: 0, zIndex: 60, alignSelf: 'stretch', margin: '0 -16px',
+          position: 'sticky', top: 0, zIndex: 60, alignSelf: 'stretch', flexShrink: 0, margin: '0 -16px',
           padding: 'max(12px, env(safe-area-inset-top)) 16px 10px', background: 'var(--bg)',
           borderBottom: '1px solid var(--border)', boxShadow: '0 4px 10px var(--elev)',
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
@@ -1306,7 +1308,7 @@ export default function Home() {
       )}
 
       {/* スワイプスタック */}
-      <div style={{ position: 'relative', width: 360, maxWidth: '100%', height: 540 }}>
+      <div style={{ position: 'relative', width: 360, maxWidth: '100%', flex: '1 1 0', minHeight: 240 }}>
         {loading && (
           <div style={{
             position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
@@ -1363,7 +1365,7 @@ export default function Home() {
       </div>
 
       {/* 操作ボタン（戻す / NOPE / 詳細 / LIKE） */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 2 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexShrink: 0 }}>
         <button onClick={undo} disabled={history.length === 0} aria-label="ひとつ戻す" title="ひとつ戻す（Backspace）"
           style={{ ...actionBtn('#f59e0b', 44), opacity: history.length === 0 ? 0.4 : 1 }}>↺</button>
         <button onClick={() => top && handleSwipe(top, 'left')} disabled={!top || loading} aria-label="見送る" title="見送る（←）"
@@ -1376,7 +1378,7 @@ export default function Home() {
 
       {/* 残り件数 */}
       {stats && !loading && (
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -4 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>
           残り {shownDeck.length}件{nextToken ? '＋' : ''}
           {deck.length !== shownDeck.length && `（絞り込みで${deck.length - shownDeck.length}件非表示）`}
           {loadingMore && ' ・続きを読み込み中…'}
