@@ -69,6 +69,17 @@ type HistoryEntry = { card: PlaceCard; dir: SwipeDir; addedFav: boolean };
 type SearchStats = { query: string; raw: number; withPhoto: number; hidden: number };
 type ErrorInfo = { message: string; detail?: string };
 
+/** 並び順：シャッフル（既定）か、写真の多い順 */
+function orderCards(cards: PlaceCard[], shuffle: boolean): PlaceCard[] {
+  const arr = [...cards];
+  if (!shuffle) return arr.sort((a, b) => b.photosCount - a.photosCount);
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 /** ------------ 詳細情報のキャッシュ（同じお店の再取得＝課金を避ける） ------------ */
 const detailsCache = new Map<string, PlaceDetails>();
 async function fetchDetails(placeId: string): Promise<PlaceDetails | null> {
@@ -838,7 +849,7 @@ export default function Home() {
       const { cards, nextPageToken } = await fetchPlaces(params, abortRef.current.signal);
       if (myId !== searchIdRef.current) return;
 
-      const items = toCards(cards, prefsRef.current.showNoPhoto).sort((a, b) => b.photosCount - a.photosCount);
+      const items = orderCards(toCards(cards, prefsRef.current.showNoPhoto), prefsRef.current.shuffle);
       const ex = excludedIds();
       const fresh = items.filter((c) => !ex.has(c.id));
 
@@ -898,7 +909,7 @@ export default function Home() {
         expansionsRef.current = expansionsRef.current.slice(1);
         setExpandLeft(expansionsRef.current.length);
       }
-      const items = toCards(cards, prefsRef.current.showNoPhoto).sort((a, b) => b.photosCount - a.photosCount);
+      const items = orderCards(toCards(cards, prefsRef.current.showNoPhoto), prefsRef.current.shuffle);
       const ex = excludedIds();
       setDeck((prev) => {
         const ids = new Set(prev.map((c) => c.id));
