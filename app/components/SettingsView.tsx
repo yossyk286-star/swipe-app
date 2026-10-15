@@ -10,8 +10,18 @@ export type Prefs = {
   showNoPhoto: boolean; // 写真のないお店も出す
   leftHanded: boolean;  // ボタンの並びを左右反転（左手用）
   haptics: boolean;     // スワイプ時の振動
+  likeText: string;     // 右スワイプのスタンプ文言
+  nopeText: string;     // 左スワイプのスタンプ文言
 };
-export const DEFAULT_PREFS: Prefs = { showNoPhoto: false, leftHanded: false, haptics: true };
+export const DEFAULT_PREFS: Prefs = { showNoPhoto: false, leftHanded: false, haptics: true, likeText: 'LIKE', nopeText: 'NOPE' };
+
+/** スタンプ文言のプリセット */
+const STAMP_PRESETS: [string, string][] = [
+  ['LIKE', 'NOPE'],
+  ['GOOD', 'BAD'],
+  ['ええやん', 'ちゃうな〜'],
+  ['行く！', 'またね'],
+];
 
 export const ACCENTS = [
   { id: 'blue', name: 'ブルー', light: '#1a73e8', dark: '#8ab4f8' },
@@ -35,6 +45,10 @@ const pill = (active: boolean): React.CSSProperties => ({
   background: active ? 'var(--accent-bg)' : 'transparent',
   color: active ? 'var(--accent)' : 'var(--text)',
 });
+const textInput: React.CSSProperties = {
+  width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, fontSize: 16, fontWeight: 800,
+  border: '2px solid var(--border)', background: 'var(--card)',
+};
 const action: React.CSSProperties = {
   padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)',
   background: 'transparent', color: 'var(--text)', fontSize: 13,
@@ -143,6 +157,48 @@ export default function SettingsView({
         <div style={hint}>
           右手用は「✕」が左、「♥」が右です。左手用は左右を入れ替えます。
         </div>
+
+        <div style={{ height: 1, background: 'var(--border)', margin: '14px 0' }} />
+
+        <div style={{ fontSize: 14, fontWeight: 600 }}>スワイプの文言</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+          {STAMP_PRESETS.map(([l, n]) => {
+            const active = prefs.likeText === l && prefs.nopeText === n;
+            return (
+              <button
+                key={l}
+                onClick={() => onPrefs({ ...prefs, likeText: l, nopeText: n })}
+                aria-pressed={active}
+                style={{ ...pill(active), flex: '0 0 auto', padding: '8px 12px' }}
+              >
+                <span style={{ color: '#10b981', fontWeight: 800 }}>{l}</span>
+                <span style={{ color: 'var(--text-muted)' }}> / </span>
+                <span style={{ color: '#ef4444', fontWeight: 800 }}>{n}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <label style={{ flex: 1, minWidth: 0, display: 'grid', gap: 4, fontSize: 12, color: 'var(--text-muted)' }}>
+            右にスワイプ（保存）
+            <input
+              value={prefs.likeText}
+              maxLength={10}
+              onChange={(e) => onPrefs({ ...prefs, likeText: e.target.value })}
+              style={{ ...textInput, borderColor: '#10b981', color: '#10b981' }}
+            />
+          </label>
+          <label style={{ flex: 1, minWidth: 0, display: 'grid', gap: 4, fontSize: 12, color: 'var(--text-muted)' }}>
+            左にスワイプ（見送り）
+            <input
+              value={prefs.nopeText}
+              maxLength={10}
+              onChange={(e) => onPrefs({ ...prefs, nopeText: e.target.value })}
+              style={{ ...textInput, borderColor: '#ef4444', color: '#ef4444' }}
+            />
+          </label>
+        </div>
+        <div style={hint}>カードをスワイプしたときに出る文字です。自由に書き換えられます（10文字まで）。空にすると標準に戻ります。</div>
 
         <div style={{ height: 1, background: 'var(--border)', margin: '14px 0' }} />
 
