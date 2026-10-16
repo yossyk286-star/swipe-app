@@ -362,13 +362,15 @@ export type SavedViewProps = {
   onCreateTag: (name: string) => void;
   onManageTags: () => void;
   onGoSearch: () => void;
+  /** 保存済みタブを表示中か（非表示のときは、スワイプで戻る処理を止める） */
+  active?: boolean;
 };
 
 export default function SavedView(props: SavedViewProps) {
   const {
     favorites, allTags, tagIcons = {}, tagCounts, userPos,
     onOpenDetails, onEditTags, onDelete, onShare, onShowOnMap, onCreateTag, onManageTags,
-    onGoSearch,
+    onGoSearch, active = true,
   } = props;
 
   const [openList, setOpenList] = useState<string | null>(null);
@@ -385,7 +387,7 @@ export default function SavedView(props: SavedViewProps) {
   // 右にスワイプで、ひとつ上の階層（タグの一覧）へ戻る
   // （画面の左端から始めたスワイプは、ブラウザ自身の「戻る」操作なので対象外）
   useEffect(() => {
-    if (openList === null) return;
+    if (openList === null || !active) return;
     let st: { x: number; y: number } | null = null;
     const onStart = (e: TouchEvent) => {
       const el = e.target as Element | null;
@@ -412,7 +414,7 @@ export default function SavedView(props: SavedViewProps) {
       document.removeEventListener('touchend', onEnd);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openList]);
+  }, [openList, active]);
 
   // 開いているタグが削除・名前変更で無くなったら一覧に戻す
   const openTag = openList !== null && openList !== ALL_LIST && !allTags.includes(openList) ? null : openList;

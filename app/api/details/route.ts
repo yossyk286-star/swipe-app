@@ -48,10 +48,15 @@ export async function GET(req: NextRequest) {
     params.toString();
 
   try {
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // Google が「OK」以外（キー制限・上限超過など）を返したら、空の情報を成功扱いにしない
+    if (data.status && data.status !== 'OK') {
+      console.error('Details google status:', data.status, data.error_message);
+      return NextResponse.json({ error: 'google_status_not_ok', g_status: data.status }, { status: 502 });
+    }
 
     const r = data.result ?? {};
     const photos = Array.isArray(r.photos) ? r.photos : [];
@@ -68,7 +73,7 @@ export async function GET(req: NextRequest) {
       userRatingsTotal: r.user_ratings_total ?? 0,
       priceLevel: r.price_level ?? null,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      photoRefs: photos.map((ph: any) => ph.photo_reference) ?? [],
+      photoRefs: photos.map((ph: any) => ph.photo_reference).filter((x: unknown) => typeof x === 'string' && x),
       lat: r.geometry?.location?.lat ?? null,
       lng: r.geometry?.location?.lng ?? null,
     };

@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
   try {
     // Place Photo API は 302 で実画像へリダイレクトするため follow が必要
-    const upstream = await fetch(googleUrl.toString(), { redirect: 'follow', cache: 'no-store' });
+    const upstream = await fetch(googleUrl.toString(), { redirect: 'follow', cache: 'no-store', signal: AbortSignal.timeout(10000) });
 
     if (!upstream.ok || !upstream.body) {
       console.error('Photo fetch failed:', upstream.status, await safeText(upstream));
