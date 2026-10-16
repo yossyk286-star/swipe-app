@@ -16,6 +16,7 @@ export type MapItem = {
   sub?: string;
   href: string;
   emoji?: string; // ピンに表示するタグのアイコン
+  image?: string; // 吹き出しに出す、最初の写真
 };
 
 const LEAFLET_VERSION = '1.9.4';
@@ -134,6 +135,15 @@ function LeafletMap({
       // 店名は外部データなので innerHTML は使わず DOM で組み立てる
       const box = document.createElement('div');
       box.style.minWidth = '160px';
+      if (it.image && /^(\/|https?:)/.test(it.image)) {
+        const img = document.createElement('img');
+        img.src = it.image;
+        img.alt = it.name;
+        img.loading = 'lazy';
+        img.style.cssText = 'display:block;width:132px;height:88px;object-fit:cover;border-radius:8px;margin-bottom:6px;background:#eee';
+        img.addEventListener('error', () => img.remove());
+        box.appendChild(img);
+      }
       const title = document.createElement('div');
       title.textContent = it.name;
       title.style.fontWeight = '700';

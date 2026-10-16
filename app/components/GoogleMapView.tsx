@@ -112,6 +112,15 @@ export default function GoogleMapView({
       const box = document.createElement('div');
       box.style.minWidth = '160px';
       box.style.color = '#222';
+      if (it.image && /^(\/|https?:)/.test(it.image)) {
+        const img = document.createElement('img');
+        img.src = it.image;
+        img.alt = it.name;
+        img.loading = 'lazy';
+        img.style.cssText = 'display:block;width:132px;height:88px;object-fit:cover;border-radius:8px;margin-bottom:6px;background:#eee';
+        img.addEventListener('error', () => img.remove());
+        box.appendChild(img);
+      }
       const title = document.createElement('div');
       title.textContent = it.name;
       title.style.fontWeight = '700';
