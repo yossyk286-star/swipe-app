@@ -7,10 +7,12 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   // 課金の悪用対策：他サイトからの呼び出し拒否＋IPごとの回数制限（1分40回）
-  const blocked = guard(req, 'details', 40);
+  const { searchParams } = new URL(req.url);
+  // lite=1：写真の情報だけ取る軽い版（共有ページが、見えているお店の写真を後から取るために使う）
+  const lite = searchParams.get('lite') === '1';
+  const blocked = lite ? guard(req, 'details_lite', 90) : guard(req, 'details', 40);
   if (blocked) return blocked;
 
-  const { searchParams } = new URL(req.url);
   const placeId = searchParams.get('placeId');
   if (!placeId) return NextResponse.json({ error: 'missing placeId' }, { status: 400 });
   if (placeId.length > 300) return NextResponse.json({ error: 'invalid placeId' }, { status: 400 });
@@ -19,7 +21,7 @@ export async function GET(req: NextRequest) {
   if (!key) return NextResponse.json({ error: 'server_misconfig' }, { status: 500 });
 
   // 取得するフィールドを最小限に
-  const fields = [
+  const fields = lite ? 'photos' : [
     'name',
     'formatted_address',
     'geometry',

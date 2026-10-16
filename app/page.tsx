@@ -30,6 +30,7 @@ import {
   STORAGE_KEYS,
   distanceTo,
   encodeShare,
+  hoursStatus,
   formatCount,
   formatDistance,
   getRefFromImageUrl,
@@ -55,7 +56,7 @@ function buildExpansions(base: string): string[] {
   return EXPAND_SUFFIXES.filter((w) => !lower.includes(w)).slice(0, 8).map((w) => `${base} ${w}`);
 }
 const MAX_SEEN = 1000;        // 見送り履歴の上限
-const MAX_SHARE = 40;         // 共有リンクに含める上限（URLが長くなりすぎないように）
+const MAX_SHARE = 80;         // 共有リンクに含める上限（URLが長くなりすぎないように）
 const MAX_SHARE_CHARS = 6500; // 共有リンクのデータ部分の長さの上限（URL全体を8KB未満に収める）
 
 
@@ -327,6 +328,7 @@ function DetailsModal({
   const name = d?.name ?? fallbackName ?? '';
   const price = priceLabel(d?.priceLevel);
   const openNow = d?.openingHours?.open_now ?? null;
+  const hoursNote = hoursStatus(d?.openingHours);
 
   return (
     <div
@@ -368,6 +370,11 @@ function DetailsModal({
               {openNow != null && (
                 <span style={{ color: openNow ? '#10b981' : 'var(--text-muted)', fontWeight: 700 }}>
                   {openNow ? '営業中' : '営業時間外'}
+                </span>
+              )}
+              {hoursNote && (
+                <span style={{ color: hoursNote.tone === 'soon' ? '#f97316' : 'var(--text-muted)', fontWeight: hoursNote.tone === 'soon' ? 700 : 500 }}>
+                  {hoursNote.text}
                 </span>
               )}
               {d.rating != null && (
@@ -741,6 +748,7 @@ export default function Home() {
   const [expandLeft, setExpandLeft] = useState(0);
   const [stats, setStats] = useState<SearchStats | null>(null);
   const [userPos, setUserPos] = useState<LatLng | null>(null);
+  const [guideSignal, setGuideSignal] = useState(0); // 設定の「使い方を見る」から案内を開く
   const abortRef = useRef<AbortController | null>(null);
   const searchIdRef = useRef(0);
   const loadingMoreRef = useRef(false);
@@ -880,6 +888,19 @@ export default function Home() {
     } finally {
       if (myId === searchIdRef.current) setLoading(false);
     }
+  }
+
+  /** 保存済みの「近い順」用：現在地を取り直す（結果は onDone で知らせる） */
+  function requestLocation(onDone: (ok: boolean) => void) {
+    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) { onDone(false); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        onDone(true);
+      },
+      () => onDone(false),
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 }
+    );
   }
 
   function search(query: string = q) {
@@ -1199,7 +1220,7 @@ export default function Home() {
   /** 共有リンク */
   async function shareFavorites(list: Favorite[]) {
     if (list.length === 0) { showToast('共有するお気に入りがありません'); return; }
-    // 写真の情報が長いので、URLが長くなりすぎる（サーバーに弾かれる）前に件数を減らす
+    // URLが長くなりすぎる（サーバーに弾かれる）前に件数を減らす（写真は入れないので、たいていは全部入る）
     let items = list.slice(0, MAX_SHARE);
     let payload = encodeShare(items);
     while (payload.length > MAX_SHARE_CHARS && items.length > 1) {
@@ -1371,7 +1392,7 @@ export default function Home() {
         paddingBottom: NAV_OFFSET,
       }}
     >
-      <Onboarding />
+      <Onboarding reopenSignal={guideSignal} />
       {/* ===== 探す ===== */}
       <div
         style={{
@@ -1653,6 +1674,7 @@ export default function Home() {
           onExport={exportBackup}
           onImport={importBackup}
           onResetSeen={resetSeen}
+          onShowGuide={() => setGuideSignal((n) => n + 1)}
         />
       </div>
 
@@ -1670,6 +1692,7 @@ export default function Home() {
           tagIcons={tagIcons}
           tagCounts={tagCounts}
           userPos={userPos}
+          onRequestLocation={requestLocation}
           onOpenDetails={openDetails}
           onEditTags={(ids) => setTagSheetIds(ids)}
           onDelete={deleteFavorite}

@@ -85,7 +85,7 @@ function ToggleRow({ label, desc, on, onChange }: { label: string; desc: string;
 }
 
 export default function SettingsView({
-  theme, onTheme, accent, onAccent, prefs, onPrefs, favoritesCount, seenCount, onExport, onImport, onResetSeen,
+  theme, onTheme, accent, onAccent, prefs, onPrefs, favoritesCount, seenCount, onExport, onImport, onResetSeen, onShowGuide,
 }: {
   theme: ThemeMode;
   onTheme: (t: ThemeMode) => void;
@@ -98,6 +98,7 @@ export default function SettingsView({
   onExport: () => void;
   onImport: (file: File) => void;
   onResetSeen: () => void;
+  onShowGuide?: () => void;
 }) {
   const importRef = useRef<HTMLInputElement | null>(null);
   const [canVibrate, setCanVibrate] = useState(true);
@@ -241,6 +242,14 @@ export default function SettingsView({
           onChange={(v) => onPrefs({ ...prefs, haptics: v })}
         />
       </section>
+
+      {onShowGuide && (
+        <section style={section}>
+          <div style={heading}>使い方</div>
+          <div style={{ ...hint, marginTop: 0, marginBottom: 12 }}>スワイプや検索の使い方を、動くデモでもう一度見られます。</div>
+          <button onClick={onShowGuide} style={action}>使い方を見る</button>
+        </section>
+      )}
 
       <section style={section}>
         <div style={heading}>データ</div>
