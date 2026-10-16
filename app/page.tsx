@@ -1460,8 +1460,20 @@ export default function Home() {
             background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: 14,
             boxShadow: '0 12px 32px rgba(0,0,0,0.18)', maxHeight: '50dvh', overflowY: 'auto',
           }}>
-            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>右スワイプで保存するとき、自動で付けるタグ</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>選んだタグが、保存したお店に付きます（複数OK）</div>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
+              <div style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, lineHeight: 1.4, paddingTop: 5 }}>保存時に自動で付けるタグ</div>
+              {/* 見た目は小さく、押せる範囲は大きく */}
+              <button
+                onClick={() => { setTagPickOpen(false); setNewAutoTagOpen(false); setNewAutoTagText(''); }}
+                aria-label="閉じる"
+                style={{ flex: '0 0 auto', width: 40, height: 40, margin: '-6px -8px -6px 0', padding: 0, border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              >
+                <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--chip)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="close" size={18} />
+                </span>
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>右スワイプで保存したお店に、選んだタグが付きます（複数OK）</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
               {existingAllTags.map((t) => {
                 const on = activeAutoTags.includes(t);
@@ -1504,11 +1516,9 @@ export default function Home() {
                   ＋ 新しいタグ
                 </button>
               )}
-              {/* タグが少ないときはタグと同じ行に、多いときは最後の行の右端に出る */}
-              <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
-                {activeAutoTags.length > 0 && <button onClick={() => setAutoTags([])} style={{ ...smallBtn, borderRadius: 999 }}>選択を外す</button>}
-                <button onClick={() => { setTagPickOpen(false); setNewAutoTagOpen(false); setNewAutoTagText(''); }} style={{ ...smallBtn, borderRadius: 999 }}>閉じる</button>
-              </span>
+              {activeAutoTags.length > 0 && (
+                <button onClick={() => setAutoTags([])} style={{ ...smallBtn, borderRadius: 999, marginLeft: 'auto' }}>選択を外す</button>
+              )}
             </div>
           </div>
         )}
