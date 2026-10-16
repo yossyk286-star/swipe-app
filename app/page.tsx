@@ -582,7 +582,7 @@ function SwipeableCard({
       style={{
         position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
         display: 'flex', flexDirection: 'column',
-        background: 'var(--card)', color: 'var(--text)', boxShadow: '0 10px 30px var(--elev)',
+        background: 'var(--card)', color: 'var(--text)', boxShadow: '0 6px 16px color-mix(in srgb, var(--elev) 40%, transparent)',
         x, rotate,
         touchAction: 'pan-y',
         zIndex: 1000,
@@ -1355,10 +1355,13 @@ export default function Home() {
     );
   }
 
-  const actionBtn = (color: string, size = 56): React.CSSProperties => ({
-    width: size, height: size, borderRadius: '50%', border: 'none',
-    background: 'var(--card)', color, fontSize: size * 0.42, fontWeight: 800,
-    boxShadow: '0 4px 14px var(--elev)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  const actionBtn = (color: string, size = 56, filled?: string): React.CSSProperties => ({
+    width: size, height: size, borderRadius: '50%', border: filled ? 'none' : '1px solid var(--border)',
+    background: filled ?? 'var(--card)', color: filled ? '#fff' : color, padding: 0,
+    boxShadow: filled
+      ? `0 8px 20px color-mix(in srgb, ${color} 45%, transparent)`
+      : '0 4px 12px color-mix(in srgb, var(--elev) 70%, transparent)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
   });
 
   return (
@@ -1534,7 +1537,7 @@ export default function Home() {
         {loading && (
           <div style={{
             position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
-            background: 'var(--card)', boxShadow: '0 10px 30px var(--elev)',
+            background: 'var(--card)', boxShadow: '0 6px 16px color-mix(in srgb, var(--elev) 40%, transparent)',
             display: 'flex', flexDirection: 'column',
           }}>
             <div className="skeleton-hero" style={{ height: '60%', background: 'var(--chip)' }} />
@@ -1554,7 +1557,7 @@ export default function Home() {
                 key={c.id}
                 style={{
                   position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
-                  background: 'var(--card)', color: 'var(--text)', boxShadow: '0 10px 30px var(--elev)',
+                  background: 'var(--card)', color: 'var(--text)', boxShadow: '0 6px 16px color-mix(in srgb, var(--elev) 40%, transparent)',
                   translateY: depth * 12, zIndex: 100 - depth, pointerEvents: 'none',
                 }}
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -1590,14 +1593,22 @@ export default function Home() {
 
       {/* 操作ボタン（戻す / NOPE / 詳細 / LIKE） */}
       <div style={{ display: 'flex', flexDirection: prefs.leftHanded ? 'row-reverse' : 'row', alignItems: 'center', gap: 18, flexShrink: 0 }}>
-        <button onClick={undo} disabled={history.length === 0} aria-label="ひとつ戻す" title="ひとつ戻す（Backspace）"
-          style={{ ...actionBtn('#f59e0b', 44), opacity: history.length === 0 ? 0.4 : 1 }}>↺</button>
-        <button onClick={() => top && handleSwipe(top, 'left')} disabled={!top || loading} aria-label="見送る" title="見送る（←）"
-          style={{ ...actionBtn('#ef4444'), opacity: !top || loading ? 0.4 : 1 }}>✕</button>
-        <button onClick={() => top && openDetails(top.id, top.name)} disabled={!top || loading} aria-label="詳細" title="詳細（↑）"
-          style={{ ...actionBtn('#3b82f6', 44), opacity: !top || loading ? 0.4 : 1 }}>i</button>
-        <button onClick={() => top && handleSwipe(top, 'right')} disabled={!top || loading} aria-label="お気に入りに追加" title="お気に入り（→）"
-          style={{ ...actionBtn('#10b981'), opacity: !top || loading ? 0.4 : 1 }}>♥</button>
+        <button className="act-btn" onClick={undo} disabled={history.length === 0} aria-label="ひとつ戻す" title="ひとつ戻す（Backspace）"
+          style={{ ...actionBtn('#f59e0b', 46), opacity: history.length === 0 ? 0.4 : 1 }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 010 11H11" /></svg>
+        </button>
+        <button className="act-btn" onClick={() => top && handleSwipe(top, 'left')} disabled={!top || loading} aria-label="見送る" title="見送る（←）"
+          style={{ ...actionBtn('#ef4444', 64), opacity: !top || loading ? 0.4 : 1 }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+        <button className="act-btn" onClick={() => top && openDetails(top.id, top.name)} disabled={!top || loading} aria-label="詳細" title="詳細（↑）"
+          style={{ ...actionBtn('#3b82f6', 46), opacity: !top || loading ? 0.4 : 1 }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M12 11v6" /><circle cx="12" cy="7" r="0.6" fill="currentColor" /></svg>
+        </button>
+        <button className="act-btn" onClick={() => top && handleSwipe(top, 'right')} disabled={!top || loading} aria-label="お気に入りに追加" title="お気に入り（→）"
+          style={{ ...actionBtn('#10b981', 64, 'linear-gradient(135deg,#34d399,#10b981 55%,#059669)'), opacity: !top || loading ? 0.4 : 1 }}>
+          <Icon name="heart" size={30} color="#fff" />
+        </button>
       </div>
 
       {/* 残り件数 */}
