@@ -996,9 +996,9 @@ export default function Home() {
   useEffect(() => {
     if (!favLoaded || !seenLoaded || !lastQueryLoaded || didInitRef.current) return;
     didInitRef.current = true;
-    // 前回の検索ワードがあれば、検索欄に入れて同じ検索をやり直す（なければ空のまま・自動検索しない）
+    // 前回の検索ワードを検索欄に入れておく（自動では検索しない。検索ボタンを押したときだけ検索する）
     const start = (typeof lastQuery === 'string' ? lastQuery : '').trim().slice(0, 100);
-    if (start) { setQ(start); search(start); }
+    if (start) setQ(start);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [favLoaded, seenLoaded, lastQueryLoaded]);
 
