@@ -51,8 +51,9 @@ export async function GET(req: NextRequest) {
     const res = new NextResponse(upstream.body, {
       headers: {
         'Content-Type': contentType,
-        // 同じ写真への再リクエスト（＝課金）を減らすため、ブラウザ/Edgeで1日キャッシュ
-        'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=86400',
+        // 同じ写真への再リクエスト（＝課金）を減らすため、ブラウザ/Edgeで30日キャッシュ
+        // （同じ写真の参照＋同じ幅なら、中身は変わらないので長く持っても安全）
+        'Cache-Control': 'public, max-age=2592000, s-maxage=2592000, stale-while-revalidate=86400, immutable',
       },
     });
     return res;
