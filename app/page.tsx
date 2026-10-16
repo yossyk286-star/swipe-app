@@ -1204,7 +1204,7 @@ export default function Home() {
         formatDistance(distanceTo(userPos, f.lat, f.lng)),
       ].filter(Boolean).join(' · ');
       const tagForIcon = (f.tags || []).find((t) => tagIcons[t]);
-      return { id: f.id, name: f.name, lat: f.lat as number, lng: f.lng as number, sub, href: mapsPlaceUrl(f.name, f.id), image: f.photoRefs?.[0] ? photoUrl(f.photoRefs[0], 300) : (f.image || undefined), emoji: tagForIcon ? tagIcons[tagForIcon] : undefined };
+      return { id: f.id, name: f.name, lat: f.lat as number, lng: f.lng as number, sub, href: mapsPlaceUrl(f.name, f.id), image: f.photoRefs?.[0] ? photoUrl(f.photoRefs[0]) : (f.image || undefined), emoji: tagForIcon ? tagIcons[tagForIcon] : undefined };
     }), [mapFavorites, userPos, tagIcons]);
   const openDetailsById = useCallback((id: string) => openDetails(id), [openDetails]);
 
