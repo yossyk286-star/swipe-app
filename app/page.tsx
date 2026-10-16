@@ -14,6 +14,7 @@ import {
 import { TagSheet, TagManager } from './TagSheets';
 import FavoritesMap, { MapItem } from './components/FavoritesMap';
 import SavedView from './components/SavedView';
+import Onboarding from './components/Onboarding';
 import { Icon, type IconName } from './components/Icons';
 import SettingsView, { ACCENTS, DEFAULT_PREFS, type AccentId, type Prefs, type ThemeMode } from './components/SettingsView';
 import {
@@ -1367,6 +1368,7 @@ export default function Home() {
         paddingBottom: NAV_OFFSET,
       }}
     >
+      <Onboarding />
       {/* ===== 探す ===== */}
       <div
         style={{
