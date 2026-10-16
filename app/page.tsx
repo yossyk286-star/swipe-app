@@ -15,6 +15,7 @@ import { TagSheet, TagManager } from './TagSheets';
 import FavoritesMap, { MapItem } from './components/FavoritesMap';
 import SavedView from './components/SavedView';
 import Onboarding from './components/Onboarding';
+import { getCachedDetails, setCachedDetails } from './lib/detailsCache';
 import { Icon, type IconName } from './components/Icons';
 import SettingsView, { ACCENTS, DEFAULT_PREFS, type AccentId, type Prefs, type ThemeMode } from './components/SettingsView';
 import {
@@ -31,6 +32,7 @@ import {
   distanceTo,
   encodeShare,
   hoursStatus,
+  isOpenNow,
   formatCount,
   formatDistance,
   getRefFromImageUrl,
@@ -84,14 +86,14 @@ function orderCards(cards: PlaceCard[], shuffle: boolean): PlaceCard[] {
 }
 
 /** ------------ 詳細情報のキャッシュ（同じお店の再取得＝課金を避ける） ------------ */
-const detailsCache = new Map<string, PlaceDetails>();
+// 端末のブラウザ内にも1日保存する（app/lib/detailsCache.ts）。「いま営業中か」は営業時間の表から計算し直す
 async function fetchDetails(placeId: string): Promise<PlaceDetails | null> {
-  const hit = detailsCache.get(placeId);
+  const hit = getCachedDetails(placeId);
   if (hit) return hit;
   const r = await fetch(`/api/details?placeId=${encodeURIComponent(placeId)}`, { cache: 'no-store' });
   if (!r.ok) return null;
   const j = (await r.json()) as { details?: PlaceDetails };
-  if (j.details) detailsCache.set(placeId, j.details);
+  if (j.details) setCachedDetails(placeId, j.details);
   return j.details ?? null;
 }
 
@@ -327,7 +329,8 @@ function DetailsModal({
   })();
   const name = d?.name ?? fallbackName ?? '';
   const price = priceLabel(d?.priceLevel);
-  const openNow = d?.openingHours?.open_now ?? null;
+  // 営業時間の表があれば今の時刻から計算する（保存した詳細でも、営業中の表示がずれない）
+  const openNow = isOpenNow(d?.openingHours) ?? d?.openingHours?.open_now ?? null;
   const hoursNote = hoursStatus(d?.openingHours);
 
   return (
