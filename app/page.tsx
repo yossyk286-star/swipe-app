@@ -731,6 +731,8 @@ export default function Home() {
   const [seenIds, setSeenIds, seenLoaded] = usePersistent<string[]>(STORAGE_KEYS.seen, []);
   const [autoTagsRaw, setAutoTags] = usePersistent<string[]>('auto_tags_v1', []);
   const [tagPickOpen, setTagPickOpen] = useState(false);
+  const [newAutoTagOpen, setNewAutoTagOpen] = useState(false); // 自動タグの選択画面の中で、新しいタグを作る
+  const [newAutoTagText, setNewAutoTagText] = useState('');
   const [tagIcons, setTagIcons] = usePersistent<Record<string, string>>(STORAGE_KEYS.tagIcons, {});
   const [prefsRaw, setPrefs] = usePersistent<Prefs>(STORAGE_KEYS.prefs, DEFAULT_PREFS);
   const prefs: Prefs = useMemo(() => ({ ...DEFAULT_PREFS, ...prefsRaw }), [prefsRaw]);
@@ -1460,24 +1462,53 @@ export default function Home() {
           }}>
             <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>右スワイプで保存するとき、自動で付けるタグ</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>選んだタグが、保存したお店に付きます（複数OK）</div>
-            {existingAllTags.length === 0 ? (
-              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>タグがまだありません。保存済みタブで作れます。</div>
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {existingAllTags.map((t) => {
-                  const on = activeAutoTags.includes(t);
-                  return (
-                    <button key={t} onClick={() => setAutoTags(on ? activeAutoTags.filter((x) => x !== t) : [...activeAutoTags, t])}
-                      style={{ ...chipBase(on), display: 'inline-flex', gap: 4 }}>
-                      {tagIcons[t] ? `${tagIcons[t]} ` : ''}{t}{on ? ' ✓' : ''}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              {activeAutoTags.length > 0 && <button onClick={() => setAutoTags([])} style={{ ...smallBtn, borderRadius: 999 }}>選択を外す</button>}
-              <button onClick={() => setTagPickOpen(false)} style={{ ...smallBtn, borderRadius: 999, marginLeft: 'auto' }}>閉じる</button>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+              {existingAllTags.map((t) => {
+                const on = activeAutoTags.includes(t);
+                return (
+                  <button key={t} onClick={() => setAutoTags(on ? activeAutoTags.filter((x) => x !== t) : [...activeAutoTags, t])}
+                    style={{ ...chipBase(on), display: 'inline-flex', gap: 4 }}>
+                    {tagIcons[t] ? `${tagIcons[t]} ` : ''}{t}{on ? ' ✓' : ''}
+                  </button>
+                );
+              })}
+              {newAutoTagOpen ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const t = newAutoTagText.trim();
+                    if (!t) return;
+                    if (!existingAllTags.includes(t)) createTag(t);
+                    // 作ったタグは、そのまま自動で付けるタグに選ぶ
+                    if (!activeAutoTags.includes(t)) setAutoTags([...activeAutoTags, t]);
+                    setNewAutoTagText('');
+                    setNewAutoTagOpen(false);
+                  }}
+                  style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexBasis: '100%' }}
+                >
+                  <input
+                    autoFocus
+                    value={newAutoTagText}
+                    onChange={(e) => setNewAutoTagText(e.target.value)}
+                    placeholder="新しいタグの名前"
+                    aria-label="新しいタグの名前"
+                    maxLength={30}
+                    style={{ flex: 1, minWidth: 0, padding: '8px 12px', fontSize: 16, borderRadius: 999, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)' }}
+                  />
+                  <button type="submit" disabled={newAutoTagText.trim() === ''}
+                    style={{ ...chipBase(true), opacity: newAutoTagText.trim() === '' ? 0.5 : 1 }}>追加</button>
+                  <button type="button" onClick={() => { setNewAutoTagOpen(false); setNewAutoTagText(''); }} style={chipBase(false)}>やめる</button>
+                </form>
+              ) : (
+                <button onClick={() => setNewAutoTagOpen(true)} style={{ ...accentChip(false), display: 'inline-flex', gap: 4, color: 'var(--accent)' }}>
+                  ＋ 新しいタグ
+                </button>
+              )}
+              {/* タグが少ないときはタグと同じ行に、多いときは最後の行の右端に出る */}
+              <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
+                {activeAutoTags.length > 0 && <button onClick={() => setAutoTags([])} style={{ ...smallBtn, borderRadius: 999 }}>選択を外す</button>}
+                <button onClick={() => { setTagPickOpen(false); setNewAutoTagOpen(false); setNewAutoTagText(''); }} style={{ ...smallBtn, borderRadius: 999 }}>閉じる</button>
+              </span>
             </div>
           </div>
         )}
