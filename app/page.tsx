@@ -184,8 +184,8 @@ const chipBase = (active: boolean): React.CSSProperties => ({
   padding: '6px 12px',
   borderRadius: 999,
   whiteSpace: 'nowrap',
-  border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
-  background: active ? 'var(--primary)' : 'var(--card)',
+  border: 'none',
+  background: active ? 'var(--primary)' : 'var(--chip)',
   color: active ? 'var(--bg)' : 'var(--text)',
   fontSize: 13,
   fontWeight: 700,
@@ -194,8 +194,8 @@ const chipBase = (active: boolean): React.CSSProperties => ({
 const smallBtn: React.CSSProperties = {
   padding: '6px 10px',
   borderRadius: 8,
-  border: '1px solid var(--border)',
-  background: 'var(--card)',
+  border: 'none',
+  background: 'var(--chip)',
   color: 'var(--text)',
   fontSize: 12,
   textDecoration: 'none',
@@ -401,9 +401,9 @@ function DetailsModal({
                   style={{
                     flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                     gap: 4, padding: '10px 4px', borderRadius: 12, textDecoration: 'none', fontSize: 12, fontWeight: 700,
-                    background: b.primary ? 'var(--accent)' : 'transparent',
+                    background: b.primary ? 'var(--accent)' : 'var(--chip)',
                     color: b.primary ? '#fff' : 'var(--accent)',
-                    border: b.primary ? 'none' : '1px solid var(--border)',
+                    border: 'none',
                   }}
                 >
                   <Icon name={b.icon} size={22} />
@@ -1214,8 +1214,8 @@ export default function Home() {
   }
   const accentChip = (active: boolean): React.CSSProperties => ({
     ...chipBase(false),
-    border: active ? '1px solid transparent' : '1px solid var(--border)',
-    background: active ? 'var(--accent-bg)' : 'var(--card)',
+    border: 'none',
+    background: active ? 'var(--accent-bg)' : 'var(--chip)',
     color: active ? 'var(--accent)' : 'var(--text)',
     fontWeight: active ? 700 : 500,
   });
@@ -1381,7 +1381,7 @@ export default function Home() {
   }
 
   const actionBtn = (color: string, size = 56, filled?: string): React.CSSProperties => ({
-    width: size, height: size, borderRadius: '50%', border: filled ? 'none' : '1px solid var(--border)',
+    width: size, height: size, borderRadius: '50%', border: 'none',
     background: filled ?? 'var(--card)', color: filled ? '#fff' : color, padding: 0,
     boxShadow: filled
       ? `0 8px 20px color-mix(in srgb, ${color} 45%, transparent)`
