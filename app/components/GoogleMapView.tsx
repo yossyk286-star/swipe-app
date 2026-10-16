@@ -111,7 +111,7 @@ export default function GoogleMapView({
       // 店名は外部データなので DOM で組み立てる
       const box = document.createElement('div');
       // 幅は店名の長さから決める（max-content だと、Google側の幅の計算とずれて文字が切れるため）
-      const boxW = Math.round(Math.min(300, window.innerWidth * 0.72, Math.max(200, it.name.length * 15 + 36)));
+      const boxW = Math.round(Math.min(270, window.innerWidth * 0.7, Math.max(200, it.name.length * 15 + 36)));
       box.style.cssText = `position:relative;width:${boxW}px;color:#222;overflow:hidden`;
       if (it.image && /^(\/|https?:)/.test(it.image)) {
         const img = document.createElement('img');
