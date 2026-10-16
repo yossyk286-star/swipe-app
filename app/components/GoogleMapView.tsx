@@ -110,7 +110,9 @@ export default function GoogleMapView({
     const openInfo = (it: MapItem, m: any) => {
       // 店名は外部データなので DOM で組み立てる
       const box = document.createElement('div');
-      box.style.cssText = 'position:relative;width:max-content;min-width:200px;max-width:min(300px,72vw);color:#222;overflow:hidden';
+      // 幅は店名の長さから決める（max-content だと、Google側の幅の計算とずれて文字が切れるため）
+      const boxW = Math.round(Math.min(300, window.innerWidth * 0.72, Math.max(200, it.name.length * 15 + 36)));
+      box.style.cssText = `position:relative;width:${boxW}px;color:#222;overflow:hidden`;
       if (it.image && /^(\/|https?:)/.test(it.image)) {
         const img = document.createElement('img');
         img.src = it.image;
@@ -134,6 +136,7 @@ export default function GoogleMapView({
       const title = document.createElement('div');
       title.textContent = it.name;
       title.style.fontWeight = '700';
+      title.style.overflowWrap = 'anywhere';
       title.style.marginBottom = '4px';
       title.style.paddingRight = it.image ? '0' : '30px';
       body.appendChild(title);

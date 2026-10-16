@@ -134,9 +134,7 @@ function LeafletMap({
 
       // 店名は外部データなので innerHTML は使わず DOM で組み立てる
       const box = document.createElement('div');
-      box.style.width = 'max-content';
-      box.style.minWidth = '180px';
-      box.style.maxWidth = 'min(280px, 65vw)';
+      box.style.width = `${Math.round(Math.min(280, window.innerWidth * 0.65, Math.max(180, it.name.length * 15 + 20)))}px`;
       if (it.image && /^(\/|https?:)/.test(it.image)) {
         const img = document.createElement('img');
         img.src = it.image;
@@ -149,6 +147,7 @@ function LeafletMap({
       const title = document.createElement('div');
       title.textContent = it.name;
       title.style.fontWeight = '700';
+      title.style.overflowWrap = 'anywhere';
       title.style.marginBottom = '4px';
       box.appendChild(title);
       if (it.sub) {
