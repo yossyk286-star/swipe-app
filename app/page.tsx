@@ -748,6 +748,7 @@ export default function Home() {
 
   /** 検索 */
   const [q, setQ] = useState(''); // 検索欄は最初は空（プレースホルダーに例を表示）
+  const [lastQuery, setLastQuery, lastQueryLoaded] = usePersistent<string>('last_query_v1', ''); // 前回の検索ワード（開き直したとき復元する）
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<ErrorInfo | null>(null);
@@ -927,6 +928,7 @@ export default function Home() {
   }
 
   function search(query: string = q) {
+    if (query.trim()) setLastQuery(query.trim());
     if (!('geolocation' in navigator)) { searchCore(query); return; }
     setLoading(true);
     navigator.geolocation.getCurrentPosition(
@@ -992,11 +994,13 @@ export default function Home() {
   // 初回：保存データの読み込みが終わってから検索（見送り済みを正しく除外するため）
   const didInitRef = useRef(false);
   useEffect(() => {
-    if (!favLoaded || !seenLoaded || didInitRef.current) return;
+    if (!favLoaded || !seenLoaded || !lastQueryLoaded || didInitRef.current) return;
     didInitRef.current = true;
-    if (q.trim()) search(q); // 検索欄が空のまま開いたときは、自動では検索しない
+    // 前回の検索ワードを検索欄に入れておく（自動では検索しない。検索ボタンを押したときだけ検索する）
+    const start = (typeof lastQuery === 'string' ? lastQuery : '').trim().slice(0, 100);
+    if (start) setQ(start);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [favLoaded, seenLoaded]);
+  }, [favLoaded, seenLoaded, lastQueryLoaded]);
 
   // 続きを先読みする：
   //  ・同じ検索の次のページ（最大60件）は、少し待ってから自動で
