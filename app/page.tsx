@@ -1425,7 +1425,7 @@ export default function Home() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           enterKeyHint="search"
-          placeholder="例：梅田 居酒屋 / なんば カフェ"
+          placeholder="梅田 居酒屋 / なんば カフェ"
           style={{
             flex: 1, minWidth: 0, padding: '12px 14px', borderRadius: 12, fontSize: 16,
             border: '2px solid var(--text-muted)', background: 'var(--card)', color: 'var(--text)',
