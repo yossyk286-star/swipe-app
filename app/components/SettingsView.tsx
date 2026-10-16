@@ -46,7 +46,7 @@ const heading: React.CSSProperties = {
 const hint: React.CSSProperties = { color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6, marginTop: 8 };
 
 const pill = (active: boolean): React.CSSProperties => ({
-  flex: '1 1 0', minWidth: 0, padding: '11px 6px', borderRadius: 14, fontSize: 13, fontWeight: active ? 700 : 500,
+  flex: '1 1 auto', minWidth: 0, padding: '11px 4px', borderRadius: 14, fontSize: 12.5, whiteSpace: 'nowrap', fontWeight: active ? 700 : 500,
   border: active ? '2px solid var(--accent)' : '1px solid var(--border)',
   background: active ? 'var(--accent-bg)' : 'transparent',
   color: active ? 'var(--accent)' : 'var(--text)',

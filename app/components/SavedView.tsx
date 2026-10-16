@@ -333,7 +333,7 @@ function PlaceRow({
       </div>
 
       {!selectMode && (
-        <div className="hscroll" style={{ display: 'flex', gap: 8, marginTop: 12, overflowX: 'auto' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
           <a href={mapsDirectionsUrl(f.name, f.id)} target="_blank" rel="noreferrer" style={pillPrimary}>
             <Icon name="directions" size={18} />
             経路
@@ -583,7 +583,7 @@ export default function SavedView(props: SavedViewProps) {
 
         <SearchBox value={query} onChange={setQuery} placeholder={`${title}の中を検索`} />
 
-        <div className="hscroll" style={{ display: 'flex', gap: 8, margin: '12px 0 2px', overflowX: 'auto' }}>
+        <div className="hscroll" style={{ display: 'flex', gap: 8, margin: '12px 0 16px', overflowX: 'auto' }}>
           {([['new', '新しい順'], ['rating', '評価順'], ['near', '近い順']] as [SortMode, string][]).map(([k, label]) => (
             <button
               key={k}
