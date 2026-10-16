@@ -151,21 +151,25 @@ function ListRow({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 16,
+        gap: 14,
         width: '100%',
-        padding: '10px 2px',
-        background: 'transparent',
-        border: 'none',
+        padding: '12px 14px',
+        marginBottom: 10,
+        boxSizing: 'border-box',
+        background: tonal ? 'transparent' : 'var(--card)',
+        border: tonal ? '1.5px dashed var(--border)' : '1px solid var(--border)',
+        borderRadius: 18,
+        boxShadow: tonal ? 'none' : '0 2px 8px color-mix(in srgb, var(--elev) 50%, transparent)',
         textAlign: 'left',
         color: 'var(--text)',
       }}
     >
       <span
         style={{
-          width: 40,
-          height: 40,
-          borderRadius: '50%',
-          background: tonal ? 'var(--accent-bg)' : color,
+          width: 46,
+          height: 46,
+          borderRadius: 15,
+          background: tonal ? 'var(--accent-bg)' : `linear-gradient(135deg, color-mix(in srgb, ${color} 70%, #fff), ${color})`,
           color: tonal ? 'var(--accent)' : '#fff',
           display: 'flex',
           alignItems: 'center',
@@ -176,7 +180,7 @@ function ListRow({
         {emoji ? <span style={{ fontSize: 20, lineHeight: 1 }}>{emoji}</span> : <Icon name={icon} size={20} />}
       </span>
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 16, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ display: 'block', fontSize: 16, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {title}
         </span>
         {sub && <span style={{ display: 'block', fontSize: 13, color: 'var(--text-muted)', marginTop: 1 }}>{sub}</span>}
@@ -216,7 +220,12 @@ function PlaceRow({
   const tags = f.tags || [];
 
   return (
-    <div style={{ padding: '14px 0', borderBottom: '1px solid var(--border)' }}>
+    <div
+      style={{
+        padding: 14, marginBottom: 12, borderRadius: 20, background: 'var(--card)',
+        border: '1px solid var(--border)', boxShadow: '0 2px 10px color-mix(in srgb, var(--elev) 50%, transparent)',
+      }}
+    >
       <div
         onClick={selectMode ? onToggleSelect : onOpen}
         style={{ display: 'flex', gap: 12, cursor: 'pointer' }}
@@ -302,14 +311,14 @@ function PlaceRow({
             src={f.image}
             alt={f.name}
             loading="lazy"
-            style={{ width: 92, height: 92, objectFit: 'cover', borderRadius: 12, flex: '0 0 auto', background: 'var(--chip)' }}
+            style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 16, flex: '0 0 auto', background: 'var(--chip)' }}
           />
         ) : (
           <div
             style={{
-              width: 92,
-              height: 92,
-              borderRadius: 12,
+              width: 96,
+              height: 96,
+              borderRadius: 16,
               flex: '0 0 auto',
               background: 'var(--chip)',
               display: 'flex',
@@ -533,7 +542,7 @@ export default function SavedView(props: SavedViewProps) {
             {!isAll && tagIcons[openTag] ? <span style={{ fontSize: 17, lineHeight: 1 }}>{tagIcons[openTag]}</span> : <Icon name={isAll ? 'heart' : 'label'} size={18} />}
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {title}
             </h1>
             <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{total}件の場所</div>
@@ -696,7 +705,7 @@ export default function SavedView(props: SavedViewProps) {
   /** ---------- ① タグの一覧（保存済みのトップ） ---------- */
   return (
     <div>
-      <h1 style={{ margin: '4px 2px 14px', fontSize: 24, fontWeight: 600 }}>保存済み</h1>
+      <h1 style={{ margin: '4px 2px 14px', fontSize: 28, fontWeight: 800, letterSpacing: 0.5 }}>保存済み</h1>
 
       <SearchBox value={query} onChange={setQuery} placeholder="保存した場所を検索" />
 
@@ -725,8 +734,8 @@ export default function SavedView(props: SavedViewProps) {
         </div>
       ) : (
         <section style={{ marginTop: 18 }}>
-          <div style={{ display: 'flex', alignItems: 'center', margin: '0 2px 4px' }}>
-            <h2 style={{ flex: 1, margin: 0, fontSize: 18, fontWeight: 600 }}>あなたのタグ</h2>
+          <div style={{ display: 'flex', alignItems: 'center', margin: '0 2px 12px' }}>
+            <h2 style={{ flex: 1, margin: 0, fontSize: 18, fontWeight: 800 }}>あなたのタグ</h2>
             <button onClick={onManageTags} style={pillBase} aria-label="タグの管理">
               <Icon name="tune" size={18} />
               管理

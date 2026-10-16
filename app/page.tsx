@@ -1707,7 +1707,7 @@ export default function Home() {
       {/* ===== 地図 ===== */}
       {tab === 'map' && (
         <div style={{ maxWidth: 560, margin: '0 auto', padding: '16px 16px 24px', boxSizing: 'border-box' }}>
-          <h1 style={{ margin: '4px 2px 12px', fontSize: 24, fontWeight: 600 }}>地図</h1>
+          <h1 style={{ margin: '4px 2px 12px', fontSize: 28, fontWeight: 800, letterSpacing: 0.5 }}>地図</h1>
           <div style={{ position: 'relative', marginBottom: 10 }}>
             <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
               <Icon name="search" size={20} />
@@ -1759,8 +1759,11 @@ export default function Home() {
         aria-label="メインメニュー"
         style={{
           position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 3000,
-          background: 'var(--card)', borderRadius: '22px 22px 0 0',
-          boxShadow: '0 -3px 14px rgba(0,0,0,0.08)',
+          background: 'color-mix(in srgb, var(--card) 80%, transparent)',
+          backdropFilter: 'blur(18px) saturate(1.6)', WebkitBackdropFilter: 'blur(18px) saturate(1.6)',
+          borderTop: '1px solid color-mix(in srgb, var(--border) 70%, transparent)',
+          borderRadius: '24px 24px 0 0',
+          boxShadow: '0 -4px 20px rgba(0,0,0,0.07)',
           paddingBottom: 'calc(env(safe-area-inset-bottom) * 0.4)',
         }}
       >
