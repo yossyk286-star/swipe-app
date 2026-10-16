@@ -110,13 +110,13 @@ export default function GoogleMapView({
     const openInfo = (it: MapItem, m: any) => {
       // 店名は外部データなので DOM で組み立てる
       const box = document.createElement('div');
-      box.style.cssText = 'position:relative;width:230px;max-width:70vw;color:#222;overflow:hidden';
+      box.style.cssText = 'position:relative;width:max-content;min-width:200px;max-width:min(300px,72vw);color:#222;overflow:hidden';
       if (it.image && /^(\/|https?:)/.test(it.image)) {
         const img = document.createElement('img');
         img.src = it.image;
         img.alt = it.name;
         img.loading = 'lazy';
-        img.style.cssText = 'display:block;width:100%;height:120px;object-fit:cover;background:#eee';
+        img.style.cssText = 'display:block;width:0;min-width:100%;height:120px;object-fit:cover;background:#eee';
         img.addEventListener('error', () => img.remove());
         box.appendChild(img);
       }
