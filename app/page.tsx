@@ -741,7 +741,7 @@ export default function Home() {
   const setFilter = <K extends keyof Filters>(k: K, v: Filters[K]) => setFiltersRaw((prev) => ({ ...DEFAULT_FILTERS, ...prev, [k]: v }));
 
   /** 検索 */
-  const [q, setQ] = useState('梅田 居酒屋');
+  const [q, setQ] = useState(''); // 検索欄は最初は空（プレースホルダーに例を表示）
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<ErrorInfo | null>(null);
@@ -974,7 +974,7 @@ export default function Home() {
   useEffect(() => {
     if (!favLoaded || !seenLoaded || didInitRef.current) return;
     didInitRef.current = true;
-    search(q);
+    if (q.trim()) search(q); // 検索欄が空のまま開いたときは、自動では検索しない
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [favLoaded, seenLoaded]);
 
@@ -1341,6 +1341,7 @@ export default function Home() {
     let body: React.ReactNode = null;
     if (!stats) {
       title = 'キーワードで検索してください';
+      body = <div style={{ fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>上の検索欄に、エリアとジャンルを入れてね<br />（例：梅田 居酒屋）</div>;
     } else if (deck.length > 0 && shownDeck.length === 0) {
       title = '絞り込み条件に合うお店がありません';
       body = (
