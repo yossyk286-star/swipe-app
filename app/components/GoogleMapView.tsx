@@ -165,6 +165,8 @@ export default function GoogleMapView({
       gl.rel = 'noreferrer';
       row.appendChild(gl);
       body.appendChild(row);
+      // 吹き出しの幅を明示する（指定しないと、ピンの右側の空きだけで幅が決まり、右端が切れることがある）
+      infoRef.current.setOptions({ minWidth: boxW, maxWidth: boxW });
       infoRef.current.setContent(box);
       infoRef.current.open({ map, anchor: m });
     };
