@@ -134,7 +134,7 @@ function LeafletMap({
 
       // 店名は外部データなので innerHTML は使わず DOM で組み立てる
       const box = document.createElement('div');
-      box.style.width = `${Math.round(Math.min(280, window.innerWidth * 0.65, Math.max(180, it.name.length * 15 + 20)))}px`;
+      box.style.width = `${Math.round(Math.min(260, window.innerWidth * 0.65, Math.max(180, it.name.length * 15 + 20)))}px`;
       if (it.image && /^(\/|https?:)/.test(it.image)) {
         const img = document.createElement('img');
         img.src = it.image;
