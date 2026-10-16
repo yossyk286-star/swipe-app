@@ -110,6 +110,27 @@ const hhmm = (t: string) => `${Number(t.slice(0, 2))}:${t.slice(2, 4)}`;
 const toMin = (day: number, t: string) => day * 1440 + Number(t.slice(0, 2)) * 60 + Number(t.slice(2, 4));
 const WEEK = 7 * 1440;
 
+/** 営業時間の表（periods）から、いま営業中かを計算する。表がなければ null */
+export function isOpenNow(
+  oh: { periods?: OpeningPeriod[] } | null | undefined,
+  now: Date = new Date()
+): boolean | null {
+  const periods = oh?.periods;
+  if (!Array.isArray(periods) || periods.length === 0) return null;
+  if (periods.length === 1 && periods[0].open && !periods[0].close) return true; // 24時間営業
+  const nowMin = now.getDay() * 1440 + now.getHours() * 60 + now.getMinutes();
+  let valid = false;
+  for (const p of periods) {
+    if (!p.open?.time || !p.close?.time || typeof p.open.day !== 'number' || typeof p.close.day !== 'number') continue;
+    valid = true;
+    const start = toMin(p.open.day, p.open.time);
+    let end = toMin(p.close.day, p.close.time);
+    if (end <= start) end += WEEK;
+    if ((nowMin >= start && nowMin < end) || (nowMin + WEEK >= start && nowMin + WEEK < end)) return true;
+  }
+  return valid ? false : null;
+}
+
 /**
  * 「あと◯分で閉店」「◯時に開店」などの目印を作る。営業時間のデータ（periods）がなければ null。
  * 時刻は端末の現在時刻で計算する（日本のお店を日本で見る前提）。
