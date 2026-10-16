@@ -125,7 +125,7 @@ export default function GoogleMapView({
       close.type = 'button';
       close.setAttribute('aria-label', '閉じる');
       close.textContent = '×';
-      close.style.cssText = 'position:absolute;top:6px;right:6px;width:28px;height:28px;border-radius:50%;border:none;background:rgba(255,255,255,.92);color:#333;font-size:18px;line-height:28px;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:pointer';
+      close.style.cssText = 'position:absolute;top:6px;right:6px;width:28px;height:28px;border-radius:50%;border:none;background:rgba(255,255,255,.7);color:#333;font-size:18px;line-height:28px;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:pointer';
       close.addEventListener('click', () => infoRef.current?.close());
       box.appendChild(close);
       const body = document.createElement('div');
