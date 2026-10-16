@@ -26,11 +26,12 @@ const STAMP_PRESETS: [string, string][] = [
 ];
 
 export const ACCENTS = [
-  { id: 'blue', name: 'ブルー', light: '#1a73e8', dark: '#8ab4f8' },
-  { id: 'green', name: 'グリーン', light: '#188038', dark: '#81c995' },
-  { id: 'orange', name: 'オレンジ', light: '#e8710a', dark: '#fcad70' },
-  { id: 'pink', name: 'ピンク', light: '#d01884', dark: '#ff8bcb' },
-  { id: 'purple', name: 'パープル', light: '#8430ce', dark: '#d7aefb' },
+  // to / toDark：グラデーションのもう片方の色（ボタンや選んだタブに使う）
+  { id: 'blue', name: 'ブルー', light: '#1a73e8', dark: '#8ab4f8', to: '#7c4dff', toDark: '#b39dff' },
+  { id: 'green', name: 'グリーン', light: '#188038', dark: '#81c995', to: '#12b5a4', toDark: '#7fe0d3' },
+  { id: 'orange', name: 'オレンジ', light: '#e8710a', dark: '#fcad70', to: '#f43f5e', toDark: '#ff9bb0' },
+  { id: 'pink', name: 'ピンク', light: '#d01884', dark: '#ff8bcb', to: '#f97316', toDark: '#ffb27a' },
+  { id: 'purple', name: 'パープル', light: '#8430ce', dark: '#d7aefb', to: '#3b82f6', toDark: '#9cc2ff' },
 ] as const;
 export type AccentId = (typeof ACCENTS)[number]['id'];
 
@@ -133,7 +134,7 @@ export default function SettingsView({
                 aria-label={a.name}
                 aria-pressed={active}
                 style={{
-                  width: 44, height: 44, borderRadius: 22, padding: 0, background: a.light,
+                  width: 44, height: 44, borderRadius: 22, padding: 0, background: `linear-gradient(135deg, ${a.light}, ${a.to})`,
                   border: active ? '3px solid var(--text)' : '3px solid transparent',
                   boxShadow: active ? '0 0 0 2px var(--card) inset' : 'none',
                 }}

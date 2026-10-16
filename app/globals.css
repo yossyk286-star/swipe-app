@@ -10,7 +10,7 @@
   --card: #fff;
   --border: #ddd;
   --primary: #111;
-  --chip: #f1f1f1;
+  --chip: #eceef3;
   --elev: rgba(0, 0, 0, 0.12);
   --danger: #dc2626;
 
@@ -24,13 +24,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg: #0f1115;
+    --bg: #0b0d11;
     --text: #e8ecf1;
     --text-muted: #b6bdc7;
-    --card: #171a20;
-    --border: #2a2f3a;
+    --card: #161a21;
+    --border: #2b313c;
     --primary: #e8ecf1;
-    --chip: #252a34;
+    --chip: #272d39;
     --elev: rgba(0, 0, 0, 0.42);
     --danger: #f87171;
 
@@ -42,13 +42,13 @@
 /* 設定画面で手動指定されたテーマ */
 :root[data-theme='dark'] {
   color-scheme: dark;
-    --bg: #0f1115;
+    --bg: #0b0d11;
     --text: #e8ecf1;
     --text-muted: #b6bdc7;
-    --card: #171a20;
-    --border: #2a2f3a;
+    --card: #161a21;
+    --border: #2b313c;
     --primary: #e8ecf1;
-    --chip: #252a34;
+    --chip: #272d39;
     --elev: rgba(0, 0, 0, 0.42);
     --danger: #f87171;
 
@@ -134,4 +134,56 @@ button:disabled {
 }
 .act-btn:active:not(:disabled) {
   transform: scale(0.88);
+}
+
+/* アクセントのグラデーション（選んだテーマカラーから自動で作る） */
+:root {
+  --accent-grad: linear-gradient(135deg, #1a73e8, #7c4dff);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --accent-grad: linear-gradient(135deg, #8ab4f8, #b39dff);
+  }
+}
+:root[data-theme='dark'] {
+  --accent-grad: linear-gradient(135deg, #8ab4f8, #b39dff);
+}
+
+/* ボタンを押したとき、ほんの少し縮む（インラインのtransformを持つものには影響しない） */
+button {
+  transition: transform 0.12s ease, background-color 0.15s ease, opacity 0.2s ease;
+}
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* 画面（タブ）を切り替えたとき、ふわっと出る */
+@keyframes tabFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.tab-fade {
+  animation: tabFadeIn 0.28s ease-out;
+}
+
+/* ライト/ダークの切り替え：画面全体をなめらかに入れ替える（View Transitions対応ブラウザ） */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.35s;
+}
+
+/* 動きを減らす設定のときは、演出を止める */
+@keyframes itemIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+/* 一覧のカードが、順番にふわっと出る */
+.item-in {
+  animation: itemIn 0.32s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .item-in { animation: none; }
+  .tab-fade { animation: none; }
+  button { transition: none; }
+  button:active:not(:disabled) { transform: none; }
 }

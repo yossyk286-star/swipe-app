@@ -150,6 +150,7 @@ function ListRow({
 }) {
   return (
     <button
+      className="item-in"
       onClick={onClick}
       style={{
         display: 'flex',
@@ -224,6 +225,7 @@ function PlaceRow({
 
   return (
     <div
+      className="item-in"
       style={{
         padding: 14, marginBottom: 12, borderRadius: 20, background: 'var(--card)',
         border: '1px solid var(--border)', boxShadow: '0 2px 10px color-mix(in srgb, var(--elev) 50%, transparent)',
