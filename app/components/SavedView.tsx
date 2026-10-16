@@ -62,6 +62,9 @@ const pillPrimary: React.CSSProperties = {
   fontWeight: 600,
 };
 
+/** お店カードの操作ボタン用（4つを1行に収めるため少し小さめ） */
+const rowPill: React.CSSProperties = { padding: '7px 11px', gap: 4, fontSize: 13 };
+
 const chip = (active: boolean): React.CSSProperties => ({
   ...pillBase,
   padding: '6px 12px',
@@ -333,21 +336,32 @@ function PlaceRow({
       </div>
 
       {!selectMode && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-          <a href={mapsDirectionsUrl(f.name, f.id)} target="_blank" rel="noreferrer" style={pillPrimary}>
-            <Icon name="directions" size={18} />
+        <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+          <a href={mapsDirectionsUrl(f.name, f.id)} target="_blank" rel="noreferrer" style={{ ...pillPrimary, ...rowPill }}>
+            <Icon name="directions" size={16} />
             経路
           </a>
-          <a href={mapsPlaceUrl(f.name, f.id)} target="_blank" rel="noreferrer" style={pillBase}>
-            <Icon name="pin" size={18} />
+          <a href={mapsPlaceUrl(f.name, f.id)} target="_blank" rel="noreferrer" style={{ ...pillBase, ...rowPill }}>
+            <Icon name="pin" size={16} />
             地図
           </a>
-          <button onClick={onEditTags} style={pillBase}>
-            <Icon name="label" size={18} />
+          <button onClick={onEditTags} style={{ ...pillBase, ...rowPill }}>
+            <Icon name="label" size={16} />
             タグ
           </button>
-          <button onClick={onDelete} style={{ ...pillBase, marginLeft: 'auto' }} aria-label={`${f.name} を削除`}>
-            <Icon name="delete" size={18} />
+          {/* 削除は元に戻せない操作なので、赤で目立たせる */}
+          <button
+            onClick={onDelete}
+            style={{
+              ...pillBase, ...rowPill, marginLeft: 'auto',
+              color: 'var(--danger, #dc2626)',
+              border: '1px solid color-mix(in srgb, var(--danger, #dc2626) 40%, transparent)',
+              background: 'color-mix(in srgb, var(--danger, #dc2626) 8%, var(--card))',
+              fontWeight: 600,
+            }}
+            aria-label={`${f.name} を削除`}
+          >
+            <Icon name="delete" size={16} />
             削除
           </button>
         </div>

@@ -12,6 +12,7 @@
   --primary: #111;
   --chip: #f1f1f1;
   --elev: rgba(0, 0, 0, 0.12);
+  --danger: #dc2626;
 
   /* Google マップ風のアクセント */
   --accent: #1a73e8;
@@ -31,6 +32,7 @@
     --primary: #e8ecf1;
     --chip: #252a34;
     --elev: rgba(0, 0, 0, 0.42);
+    --danger: #f87171;
 
     --accent: #8ab4f8;
     --accent-bg: rgba(138, 180, 248, 0.16);
@@ -48,6 +50,7 @@
     --primary: #e8ecf1;
     --chip: #252a34;
     --elev: rgba(0, 0, 0, 0.42);
+    --danger: #f87171;
 
     --accent: #8ab4f8;
     --accent-bg: rgba(138, 180, 248, 0.16);
