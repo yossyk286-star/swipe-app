@@ -65,6 +65,13 @@ const subBtn: React.CSSProperties = {
   fontSize: 13,
 };
 
+/** 先頭から n 文字（絵文字は1文字として数える）だけ残す */
+function firstGraphemes(text: string, n: number): string {
+  const Seg = (Intl as unknown as { Segmenter?: new (l?: string, o?: { granularity: string }) => { segment: (s: string) => Iterable<{ segment: string }> } }).Segmenter;
+  if (!Seg) return Array.from(text).slice(0, n).join('');
+  return Array.from(new Seg(undefined, { granularity: 'grapheme' }).segment(text), (x) => x.segment).slice(0, n).join('');
+}
+
 /** 日本語IMEの変換確定のEnterで送信されないようにする */
 function isEnterToSubmit(e: React.KeyboardEvent<HTMLInputElement>) {
   return e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229;
@@ -183,6 +190,7 @@ export function TagManager({
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [pickingIcon, setPickingIcon] = useState<string | null>(null);
+  const [iconDraft, setIconDraft] = useState('');
 
   const startEdit = (t: string) => {
     setEditing(t);
@@ -295,7 +303,27 @@ export function TagManager({
                       </button>
                     ))}
                   </div>
-                  <button onClick={() => { onIcon(t, null); setPickingIcon(null); }} style={{ ...subBtn, marginTop: 8 }}>
+                  {/* 好きな絵文字・文字をキーボードで入力して決める（2文字まで） */}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+                    <input
+                      value={iconDraft}
+                      onChange={(e) => setIconDraft(firstGraphemes(e.target.value, 2))}
+                      onKeyDown={(e) => {
+                        if (isEnterToSubmit(e) && iconDraft.trim()) { onIcon(t, iconDraft.trim()); setIconDraft(''); setPickingIcon(null); }
+                      }}
+                      placeholder="自分で入力（絵文字・1〜2文字）"
+                      aria-label={`${t} のアイコンを入力`}
+                      style={{ ...inputStyle, textAlign: 'center' }}
+                    />
+                    <button
+                      onClick={() => { onIcon(t, iconDraft.trim()); setIconDraft(''); setPickingIcon(null); }}
+                      disabled={iconDraft.trim() === ''}
+                      style={primaryBtn(iconDraft.trim() === '')}
+                    >
+                      決定
+                    </button>
+                  </div>
+                  <button onClick={() => { onIcon(t, null); setIconDraft(''); setPickingIcon(null); }} style={{ ...subBtn, marginTop: 8 }}>
                     アイコンをもとに戻す
                   </button>
                 </div>
