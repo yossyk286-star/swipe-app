@@ -4,6 +4,7 @@ import { guard } from '../_lib/guard';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 30; // 続きのページの再試行で待つぶん、長めに
 
 // --- 型の簡易定義（必要なら拡張）
 type GPhoto = { photo_reference: string };
@@ -49,6 +50,10 @@ export async function GET(req: NextRequest) {
     if (!q && !pageToken) return err(400, 'missing_q');
     if (q.length > 100) return err(400, 'q_too_long');
     if (pageToken.length > 2000) return err(400, 'invalid_pagetoken');
+    // 現在地は数字だけ受け付ける（変な値をそのままGoogleに渡さない）
+    const latN = lat === null ? NaN : Number(lat);
+    const lngN = lng === null ? NaN : Number(lng);
+    const hasGeo = Number.isFinite(latN) && Number.isFinite(lngN) && Math.abs(latN) <= 90 && Math.abs(lngN) <= 180;
 
     const key = process.env.GOOGLE_MAPS_API_KEY;
     if (!key) return err(500, 'missing_api_key');
@@ -61,7 +66,7 @@ export async function GET(req: NextRequest) {
     } else {
       gUrl.searchParams.set('query', q);
       // 現在地があれば bias 用に location を付ける（rankby=prominence デフォルト）
-      if (lat && lng) gUrl.searchParams.set('location', `${lat},${lng}`);
+      if (hasGeo) gUrl.searchParams.set('location', `${latN},${lngN}`);
     }
     gUrl.searchParams.set('language', 'ja');
     gUrl.searchParams.set('key', key);
@@ -69,11 +74,12 @@ export async function GET(req: NextRequest) {
     // --- 呼び出し（pagetoken は発行直後だと INVALID_REQUEST になることがあるので少し待って再試行）
     let gJson: GResponse | null = null;
     for (let attempt = 0; attempt < 4; attempt++) {
-      const gRes = await fetch(gUrl.toString(), { cache: 'no-store' });
+      const gRes = await fetch(gUrl.toString(), { cache: 'no-store', signal: AbortSignal.timeout(8000) });
       console.log('[places] upstream status', gRes.status);
       if (!gRes.ok) {
-        const head = (await gRes.text()).slice(0, 500);
-        return err(502, 'google_upstream_not_ok', { status: gRes.status, head });
+        // 相手の応答の中身はログにだけ残し、利用者には返さない
+        console.error('[places] upstream body', (await gRes.text()).slice(0, 500));
+        return err(502, 'google_upstream_not_ok', { status: gRes.status });
       }
       gJson = (await gRes.json()) as GResponse;
       if (pageToken && gJson.status === 'INVALID_REQUEST' && attempt < 3) {
@@ -120,6 +126,7 @@ export async function GET(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (e: any) {
     console.error('[places] exception', e);
+    if (e?.name === 'TimeoutError' || e?.name === 'AbortError') return err(504, 'upstream_timeout');
     return err(500, 'exception');
   }
 }

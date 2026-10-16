@@ -55,6 +55,7 @@ function buildExpansions(base: string): string[] {
 }
 const MAX_SEEN = 1000;        // 見送り履歴の上限
 const MAX_SHARE = 40;         // 共有リンクに含める上限（URLが長くなりすぎないように）
+const MAX_SHARE_CHARS = 6500; // 共有リンクのデータ部分の長さの上限（URL全体を8KB未満に収める）
 
 
 // price は旧バージョンの保存データとの互換用（いまは budget を使う）
@@ -153,7 +154,16 @@ function usePersistent<T>(key: string, initial: T) {
     try {
       const raw = localStorage.getItem(key);
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (raw != null) setValue(JSON.parse(raw) as T);
+      if (raw != null) {
+        const parsed: unknown = JSON.parse(raw);
+        // 壊れた・形の違う保存データで画面が落ちないよう、初期値と同じ種類（配列／オブジェクト）のときだけ使う
+        const sameKind = Array.isArray(initial)
+          ? Array.isArray(parsed)
+          : initial !== null && typeof initial === 'object'
+            ? parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+            : typeof parsed === typeof initial;
+        if (sameKind) setValue(parsed as T);
+      }
     } catch {}
     setLoaded(true);
   }, [key]);
@@ -983,6 +993,7 @@ export default function Home() {
       const total = c.photoRefs?.length || 1;
       const next = ((c.currentIdx ?? 0) + delta + total) % total;
       const ref = c.photoRefs[next] ?? getRefFromImageUrl(c.image);
+      if (!ref) return c; // 写真がまったく無いお店は、画像を壊さずそのまま
       return { ...c, currentIdx: next, image: photoUrl(ref) };
     }));
   }
@@ -1187,9 +1198,15 @@ export default function Home() {
   /** 共有リンク */
   async function shareFavorites(list: Favorite[]) {
     if (list.length === 0) { showToast('共有するお気に入りがありません'); return; }
-    const items = list.slice(0, MAX_SHARE);
-    const url = `${window.location.origin}/share?f=${encodeShare(items)}`;
-    const note = list.length > MAX_SHARE ? `（先頭${MAX_SHARE}件）` : '';
+    // 写真の情報が長いので、URLが長くなりすぎる（サーバーに弾かれる）前に件数を減らす
+    let items = list.slice(0, MAX_SHARE);
+    let payload = encodeShare(items);
+    while (payload.length > MAX_SHARE_CHARS && items.length > 1) {
+      items = items.slice(0, Math.max(1, Math.floor(items.length * 0.8)));
+      payload = encodeShare(items);
+    }
+    const url = `${window.location.origin}/share?f=${payload}`;
+    const note = list.length > items.length ? `（先頭${items.length}件）` : '';
     const text = `Swipickのお気に入り ${items.length}件${note}`;
     if (typeof navigator.share === 'function') {
       try {
@@ -1209,7 +1226,7 @@ export default function Home() {
 
   /** バックアップ（書き出し・読み込み） */
   function exportBackup() {
-    const data = { app: 'swipick', version: 1, exportedAt: new Date().toISOString(), favorites, tags: userTags };
+    const data = { app: 'swipick', version: 1, exportedAt: new Date().toISOString(), favorites, tags: userTags, tagIcons };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1227,7 +1244,7 @@ export default function Home() {
   async function importBackup(file: File) {
     try {
       const data: unknown = JSON.parse(await file.text());
-      const obj = (data && typeof data === 'object' ? data : {}) as { favorites?: unknown; tags?: unknown };
+      const obj = (data && typeof data === 'object' ? data : {}) as { favorites?: unknown; tags?: unknown; tagIcons?: unknown };
       const list: unknown = Array.isArray(data) ? data : obj.favorites;
       if (!Array.isArray(list)) throw new Error('invalid');
 
@@ -1275,6 +1292,13 @@ export default function Home() {
       setFavorites(merged);
       const tags = Array.isArray(obj.tags) ? obj.tags.filter((t): t is string => typeof t === 'string') : [];
       setUserTags((prev) => Array.from(new Set([...prev, ...tags, ...incoming.flatMap((f) => f.tags)])));
+      if (obj.tagIcons && typeof obj.tagIcons === 'object' && !Array.isArray(obj.tagIcons)) {
+        const icons: Record<string, string> = {};
+        for (const [k, v] of Object.entries(obj.tagIcons as Record<string, unknown>)) {
+          if (typeof v === 'string' && v.length <= 8) icons[k] = v;
+        }
+        setTagIcons((prev) => ({ ...icons, ...prev })); // いま使っているアイコンを優先
+      }
       showToast(`読み込みました（追加 ${added}件 / 既存 ${incoming.length - added}件）`);
     } catch {
       showToast('読み込めませんでした。Swipickで書き出したファイルを選んでください。');
@@ -1405,9 +1429,9 @@ export default function Home() {
             boxShadow: '0 12px 32px rgba(0,0,0,0.18)', maxHeight: '50dvh', overflowY: 'auto',
           }}>
             <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>右スワイプで保存するとき、自動で付けるタグ</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>選んだタグが、保存したお店に付きます（複数OK）</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>選んだタグが、保存したお店に付きます（複数OK）</div>
             {existingAllTags.length === 0 ? (
-              <div style={{ fontSize: 13, color: 'var(--muted)' }}>タグがまだありません。保存済みタブで作れます。</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>タグがまだありません。保存済みタブで作れます。</div>
             ) : (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {existingAllTags.map((t) => {
@@ -1627,6 +1651,7 @@ export default function Home() {
         }}
       >
         <SavedView
+          active={tab === 'saved'}
           favorites={favorites}
           allTags={existingAllTags}
           tagIcons={tagIcons}

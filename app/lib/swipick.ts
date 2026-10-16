@@ -280,7 +280,8 @@ export function decodeShare(payload: string): SharedView[] {
         });
       } else if (typeof o.name === 'string') {
         // 旧形式
-        out.push({ name: o.name, image: typeof o.image === 'string' ? o.image : null });
+        // 外部の画像URLは読み込まない（自分のサーバーの写真だけ許可）
+        out.push({ name: o.name, image: typeof o.image === 'string' && o.image.startsWith('/api/photo?') ? o.image : null });
       }
     }
     return out;
