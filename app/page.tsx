@@ -245,7 +245,7 @@ function AnimatedImage({
         onClick={onClick}
         style={{
           width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'var(--chip)', color: 'var(--text-muted)', fontSize: 24,
+          background: 'linear-gradient(160deg, #64748b, #1e293b)', color: 'rgba(255,255,255,0.8)', fontSize: 48,
         }}
       >
         🍽
@@ -590,9 +590,9 @@ function SwipeableCard({
   return (
     <motion.div
       style={{
-        position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
+        position: 'absolute', inset: 0, borderRadius: 28, overflow: 'hidden',
         display: 'flex', flexDirection: 'column',
-        background: 'var(--card)', color: 'var(--text)', boxShadow: '0 6px 16px color-mix(in srgb, var(--elev) 40%, transparent)',
+        background: 'var(--card)', color: 'var(--text)', boxShadow: '0 8px 22px color-mix(in srgb, var(--elev) 45%, transparent)',
         x, rotate,
         touchAction: 'pan-y',
         zIndex: 1000,
@@ -648,7 +648,7 @@ function SwipeableCard({
         data-image-area="true"
         onPointerDownCapture={() => { gestureInImageRef.current = true; }}
         style={{
-          position: 'relative', width: '100%', flex: '1 1 0', minHeight: 0,
+          position: 'absolute', inset: 0,
           touchAction: 'none',
           overscrollBehavior: 'contain',
         }}
@@ -686,18 +686,9 @@ function SwipeableCard({
           詳細
         </button>
 
-        {/* 営業状況バッジ */}
-        <div style={{
-          position: 'absolute', left: 10, bottom: 10, padding: '4px 10px',
-          borderRadius: 999, zIndex: 6, color: '#fff', fontSize: 12, fontWeight: 700,
-          background: card.openNow === true ? 'rgba(16,185,129,0.92)' : card.openNow === false ? 'rgba(107,114,128,0.92)' : 'rgba(0,0,0,0.45)',
-        }}>
-          {card.openNow === true ? '営業中' : card.openNow === false ? '営業時間外' : '営業時間不明'}
-        </div>
-
         {/* タップヒント */}
         <div aria-hidden="true" className="tap-hint" style={{
-          position: 'absolute', right: 10, bottom: 10, zIndex: 6,
+          position: 'absolute', right: 10, top: 18, zIndex: 6,
           padding: '6px 10px', borderRadius: 999,
           background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: 12,
           pointerEvents: 'none', userSelect: 'none',
@@ -706,15 +697,26 @@ function SwipeableCard({
         </div>
       </div>
 
-      {/* 店名＋評価・価格・距離＋住所 */}
-      <div style={{ padding: '12px 14px 14px', flex: '0 0 auto' }}>
-        <h2 className="jp-text jp-title" style={{ margin: '0 0 6px', fontSize: 19, lineHeight: 1.3 }}>{card.name}</h2>
+      {/* 店名＋評価・価格・距離＋住所（写真の下に重ねる） */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 5, pointerEvents: 'none',
+        padding: '72px 18px 18px', color: '#fff',
+        background: 'linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.55) 55%, rgba(0,0,0,0) 100%)',
+        textShadow: '0 1px 6px rgba(0,0,0,0.45)',
+      }}>
+        <span style={{
+          display: 'inline-block', marginBottom: 8, padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, textShadow: 'none',
+          background: card.openNow === true ? 'rgba(16,185,129,0.95)' : card.openNow === false ? 'rgba(107,114,128,0.9)' : 'rgba(255,255,255,0.22)',
+        }}>
+          {card.openNow === true ? '営業中' : card.openNow === false ? '営業時間外' : '営業時間不明'}
+        </span>
+        <h2 className="jp-text jp-title" style={{ margin: '0 0 6px', fontSize: 23, lineHeight: 1.25, fontWeight: 800 }}>{card.name}</h2>
         <div style={{ fontSize: 14, marginBottom: 6 }}>
           <MetaLine c={card} pos={userPos} />
         </div>
         {card.address && (
           <div className="jp-text" style={{
-            color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.5,
+            color: 'rgba(255,255,255,0.82)', fontSize: 12, lineHeight: 1.5,
             display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
           }}>
             📍 {shortAddress(card.address)}
@@ -1621,8 +1623,8 @@ export default function Home() {
       <div style={{ position: 'relative', width: 360, maxWidth: '100%', flex: '1 1 0', minHeight: 240 }}>
         {loading && (
           <div style={{
-            position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
-            background: 'var(--card)', boxShadow: '0 6px 16px color-mix(in srgb, var(--elev) 40%, transparent)',
+            position: 'absolute', inset: 0, borderRadius: 28, overflow: 'hidden',
+            background: 'var(--card)', boxShadow: '0 8px 22px color-mix(in srgb, var(--elev) 45%, transparent)',
             display: 'flex', flexDirection: 'column',
           }}>
             <div className="skeleton-hero" style={{ height: '60%', background: 'var(--chip)' }} />
@@ -1641,19 +1643,19 @@ export default function Home() {
               <motion.div
                 key={c.id}
                 style={{
-                  position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden',
-                  background: 'var(--card)', color: 'var(--text)', boxShadow: '0 6px 16px color-mix(in srgb, var(--elev) 40%, transparent)',
+                  position: 'absolute', inset: 0, borderRadius: 28, overflow: 'hidden',
+                  background: 'var(--card)', color: 'var(--text)', boxShadow: '0 8px 22px color-mix(in srgb, var(--elev) 45%, transparent)',
                   translateY: depth * 12, zIndex: 100 - depth, pointerEvents: 'none',
                 }}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 - depth * 0.04 }}
                 exit={{ opacity: 0 }}
               >
-                <div style={{ width: '100%', height: '60%' }}>
+                <div style={{ position: 'absolute', inset: 0 }}>
                   <AnimatedImage src={c.image} alt={c.name} variant="fade" />
                 </div>
-                <div style={{ padding: 14, opacity: 0.7 }}>
-                  <h2 style={{ margin: 0, fontSize: 18 }}>{c.name}</h2>
+                <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '48px 18px 18px', color: '#fff', background: 'linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0))' }}>
+                  <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>{c.name}</h2>
                 </div>
               </motion.div>
             );
