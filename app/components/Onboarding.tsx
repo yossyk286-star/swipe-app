@@ -1,6 +1,7 @@
 'use client';
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Icon } from './Icons';
 
 const KEY = 'onboarded_v1';
 
@@ -41,7 +42,9 @@ function DemoCard({ kind }: { kind: 'left' | 'right' | 'up' }) {
           display: 'flex', alignItems: 'flex-end',
         }}
       >
-        <div style={{ position: 'absolute', top: 70, left: 0, right: 0, textAlign: 'center', fontSize: 64 }}>🍜</div>
+        <div style={{ position: 'absolute', top: 62, left: 0, right: 0, display: 'flex', justifyContent: 'center', opacity: .9 }}>
+          <Icon name="pin" size={72} color="rgba(255,255,255,.92)" />
+        </div>
         <div style={{ width: '100%', padding: '10px 12px', background: 'linear-gradient(transparent,rgba(0,0,0,.6))', color: '#fff', fontWeight: 800, fontSize: 15 }}>
           サンプル食堂
         </div>
@@ -58,13 +61,21 @@ function DemoCard({ kind }: { kind: 'left' | 'right' | 'up' }) {
           {stamp.t}
         </motion.div>
       </motion.div>
-      {/* 指 */}
+      {/* タッチの丸（指の代わり） */}
       <motion.div
         animate={{ x: [0, 0, dx, dx, 0], y: [0, 0, dy, dy, 0], opacity: [0, 1, 1, 0, 0] }}
         transition={loop}
-        style={{ position: 'absolute', left: 84, top: 150, fontSize: 40, pointerEvents: 'none', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,.4))' }}
+        style={{ position: 'absolute', left: 78, top: 160, width: 44, height: 44, pointerEvents: 'none' }}
       >
-        👆
+        <motion.div
+          animate={{ scale: [1, 1.9, 1], opacity: [0.5, 0, 0.5] }}
+          transition={{ duration: 1.2, repeat: Infinity, ease: 'easeOut' }}
+          style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'rgba(255,255,255,.7)' }}
+        />
+        <div style={{
+          position: 'absolute', inset: 6, borderRadius: '50%', background: 'rgba(255,255,255,.95)',
+          boxShadow: '0 2px 10px rgba(0,0,0,.45), inset 0 0 0 2px rgba(255,255,255,.6)',
+        }} />
       </motion.div>
     </div>
   );
@@ -84,10 +95,18 @@ function DemoSearch() {
         display: 'flex', alignItems: 'center', gap: 8, background: '#fff', color: '#222', borderRadius: 14,
         padding: '12px 14px', fontSize: 16, boxShadow: '0 6px 20px rgba(0,0,0,.3)',
       }}>
-        <span>🔍</span>
+        <span style={{ color: '#6b7280', display: 'flex' }}><Icon name="search" size={20} /></span>
         <span>{full.slice(0, Math.min(n, full.length))}<span style={{ opacity: n % 2 ? 0 : 1 }}>|</span></span>
       </div>
-      <div style={{ textAlign: 'center', fontSize: 40 }}>⬇️</div>
+      <motion.div
+        animate={{ y: [0, 8, 0], opacity: [0.5, 1, 0.5] }}
+        transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+        style={{ display: 'flex', justifyContent: 'center' }}
+      >
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </motion.div>
       <div style={{ textAlign: 'center', color: '#fff', fontSize: 13, opacity: .85 }}>お店のカードが出てくるよ</div>
     </div>
   );
@@ -97,6 +116,7 @@ function DemoSearch() {
 export default function Onboarding({ reopenSignal = 0 }: { reopenSignal?: number }) {
   const [open, setOpen] = useState(false);
   const [i, setI] = useState(0);
+  const touchRef = React.useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     try {
@@ -122,6 +142,22 @@ export default function Onboarding({ reopenSignal = 0 }: { reopenSignal?: number
     try { localStorage.setItem(KEY, '1'); } catch { /* 保存できなくても閉じる */ }
   };
 
+  const go = (d: number) => setI((v) => Math.max(0, Math.min(STEPS.length - 1, v + d)));
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchRef.current = { x: t.clientX, y: t.clientY };
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const st = touchRef.current;
+    touchRef.current = null;
+    if (!st) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - st.x;
+    const dy = t.clientY - st.y;
+    // 左にスワイプ→次へ／右にスワイプ→前へ
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.2) go(dx < 0 ? 1 : -1);
+  };
+
   if (!open) return null;
   const step = STEPS[i];
   const last = i === STEPS.length - 1;
@@ -131,10 +167,12 @@ export default function Onboarding({ reopenSignal = 0 }: { reopenSignal?: number
       role="dialog"
       aria-modal="true"
       aria-label="使い方"
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
       style={{
-        position: 'fixed', inset: 0, zIndex: 6000, background: 'rgba(0,0,0,.82)', color: '#fff',
+        position: 'fixed', inset: 0, zIndex: 6000, background: 'rgba(8,10,16,.92)', color: '#fff',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        padding: '20px 24px', gap: 18, touchAction: 'none',
+        padding: '20px 24px', gap: 18, touchAction: 'pan-y', userSelect: 'none', WebkitUserSelect: 'none',
       }}
     >
       <button
@@ -152,10 +190,10 @@ export default function Onboarding({ reopenSignal = 0 }: { reopenSignal?: number
         {step.kind === 'search' ? <DemoSearch /> : <DemoCard kind={step.kind} />}
       </div>
 
-      <div style={{ textAlign: 'center', maxWidth: 320, minHeight: 78 }}>
+      <motion.div key={`t-${step.kind}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} style={{ textAlign: 'center', maxWidth: 320, minHeight: 78 }}>
         <div style={{ fontSize: 20, fontWeight: 800 }}>{step.title}</div>
         <div style={{ fontSize: 14, opacity: .85, lineHeight: 1.6, marginTop: 6 }}>{step.text}</div>
-      </div>
+      </motion.div>
 
       <div style={{ display: 'flex', gap: 8 }}>
         {STEPS.map((s, k) => (
