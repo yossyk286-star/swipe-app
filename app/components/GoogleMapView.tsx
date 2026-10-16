@@ -81,7 +81,7 @@ export default function GoogleMapView({
           fullscreenControl: false,
         });
         mapRef.current = map;
-        infoRef.current = new InfoWindow();
+        infoRef.current = new InfoWindow({ headerDisabled: true });
         libsRef.current = marker;
         setReady(true);
       })
@@ -110,29 +110,40 @@ export default function GoogleMapView({
     const openInfo = (it: MapItem, m: any) => {
       // 店名は外部データなので DOM で組み立てる
       const box = document.createElement('div');
-      box.style.minWidth = '160px';
-      box.style.color = '#222';
+      box.style.cssText = 'position:relative;width:230px;max-width:70vw;color:#222;overflow:hidden';
       if (it.image && /^(\/|https?:)/.test(it.image)) {
         const img = document.createElement('img');
         img.src = it.image;
         img.alt = it.name;
         img.loading = 'lazy';
-        img.style.cssText = 'display:block;width:132px;height:88px;object-fit:cover;border-radius:8px;margin-bottom:6px;background:#eee';
+        img.style.cssText = 'display:block;width:100%;height:120px;object-fit:cover;background:#eee';
         img.addEventListener('error', () => img.remove());
         box.appendChild(img);
       }
+      // 標準の×は写真に重なって邪魔なので、自前の×を写真の右上に重ねる
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.setAttribute('aria-label', '閉じる');
+      close.textContent = '×';
+      close.style.cssText = 'position:absolute;top:6px;right:6px;width:28px;height:28px;border-radius:50%;border:none;background:rgba(255,255,255,.92);color:#333;font-size:18px;line-height:28px;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:pointer';
+      close.addEventListener('click', () => infoRef.current?.close());
+      box.appendChild(close);
+      const body = document.createElement('div');
+      body.style.cssText = 'padding:10px 12px 12px';
+      box.appendChild(body);
       const title = document.createElement('div');
       title.textContent = it.name;
       title.style.fontWeight = '700';
       title.style.marginBottom = '4px';
-      box.appendChild(title);
+      title.style.paddingRight = it.image ? '0' : '30px';
+      body.appendChild(title);
       if (it.sub) {
         const sub = document.createElement('div');
         sub.textContent = it.sub;
         sub.style.fontSize = '12px';
         sub.style.color = '#555';
         sub.style.marginBottom = '6px';
-        box.appendChild(sub);
+        body.appendChild(sub);
       }
       const row = document.createElement('div');
       row.style.display = 'flex';
@@ -150,7 +161,7 @@ export default function GoogleMapView({
       gl.target = '_blank';
       gl.rel = 'noreferrer';
       row.appendChild(gl);
-      box.appendChild(row);
+      body.appendChild(row);
       infoRef.current.setContent(box);
       infoRef.current.open({ map, anchor: m });
     };

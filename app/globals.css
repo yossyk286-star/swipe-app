@@ -113,16 +113,13 @@ button:disabled {
   text-wrap: balance;
 }
 
-/* Googleマップの吹き出しの×ボタンを小さめに */
-.gm-style .gm-style-iw-chr {
-  height: 28px;
+/* Googleマップの吹き出し：余白をなくして写真を端まで広げる（×はコード側で写真に重ねている） */
+.gm-style .gm-style-iw-c {
+  padding: 0 !important;
+  border-radius: 14px !important;
+  overflow: hidden;
 }
-.gm-style .gm-style-iw-chr .gm-ui-hover-effect {
-  width: 28px !important;
-  height: 28px !important;
-}
-.gm-style .gm-style-iw-chr .gm-ui-hover-effect > span {
-  width: 14px !important;
-  height: 14px !important;
-  margin: 7px !important;
+.gm-style .gm-style-iw-d {
+  overflow: hidden !important;
+  max-height: none !important;
 }
