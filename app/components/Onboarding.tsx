@@ -1,18 +1,102 @@
 'use client';
 import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 
 const KEY = 'onboarded_v1';
 
-const ROWS: { icon: string; title: string; text: string }[] = [
-  { icon: '🔍', title: '検索', text: '上の検索欄に、行きたいお店のキーワードを自由に入力してね（例：渋谷 ラーメン）' },
-  { icon: '👈', title: '左にスワイプ', text: 'スキップ。気にならないお店は左へ' },
-  { icon: '👉', title: '右にスワイプ', text: '保存。気になるお店は「保存済み」に入るよ' },
-  { icon: '👆', title: '上にスワイプ', text: 'お店の詳細（住所・営業時間・写真など）を見る' },
+type Step = {
+  kind: 'search' | 'left' | 'right' | 'up';
+  title: string;
+  text: string;
+};
+
+const STEPS: Step[] = [
+  { kind: 'search', title: '自由に検索', text: '上の検索欄にキーワードを入れてね（例：渋谷 ラーメン）' },
+  { kind: 'right', title: '右にスワイプ＝保存', text: '気になるお店は右へ。「保存済み」に入るよ' },
+  { kind: 'left', title: '左にスワイプ＝スキップ', text: '気にならないお店は左へ。次のお店が出るよ' },
+  { kind: 'up', title: '上にスワイプ＝詳細', text: '住所・営業時間・写真などを見られるよ' },
 ];
 
-/** 初回起動時だけ出す使い方の案内。設定の「使い方を見る」から再表示もできる */
+const STEP_MS = 3800;
+
+/** デモ用の疑似カード。指の動きに合わせてカードが動く */
+function DemoCard({ kind }: { kind: 'left' | 'right' | 'up' }) {
+  const dx = kind === 'right' ? 90 : kind === 'left' ? -90 : 0;
+  const dy = kind === 'up' ? -90 : 0;
+  const rot = kind === 'right' ? 12 : kind === 'left' ? -12 : 0;
+  const stamp = kind === 'right' ? { t: '保存', c: '#16a34a' } : kind === 'left' ? { t: 'スキップ', c: '#e11d48' } : { t: '詳細', c: '#2563eb' };
+  const times = [0, 0.25, 0.65, 0.85, 1];
+  const ease = 'easeInOut' as const;
+  const loop = { duration: 2.4, times, ease, repeat: Infinity, repeatDelay: 0.3 };
+  return (
+    <div style={{ position: 'relative', width: 200, height: 250 }}>
+      {/* 後ろのカード */}
+      <div style={{ position: 'absolute', inset: 0, transform: 'scale(.94) translateY(10px)', borderRadius: 20, background: '#d1d5db' }} />
+      <motion.div
+        animate={{ x: [0, 0, dx, dx, 0], y: [0, 0, dy, dy, 0], rotate: [0, 0, rot, rot, 0] }}
+        transition={loop}
+        style={{
+          position: 'absolute', inset: 0, borderRadius: 20, overflow: 'hidden',
+          background: 'linear-gradient(160deg,#fde68a,#fb923c)', boxShadow: '0 10px 28px rgba(0,0,0,.35)',
+          display: 'flex', alignItems: 'flex-end',
+        }}
+      >
+        <div style={{ position: 'absolute', top: 70, left: 0, right: 0, textAlign: 'center', fontSize: 64 }}>🍜</div>
+        <div style={{ width: '100%', padding: '10px 12px', background: 'linear-gradient(transparent,rgba(0,0,0,.6))', color: '#fff', fontWeight: 800, fontSize: 15 }}>
+          サンプル食堂
+        </div>
+        <motion.div
+          animate={{ opacity: [0, 0, 1, 1, 0] }}
+          transition={loop}
+          style={{
+            position: 'absolute', top: 18, [kind === 'left' ? 'right' : 'left']: 14,
+            border: `3px solid ${stamp.c}`, color: stamp.c, borderRadius: 8, padding: '2px 10px',
+            fontWeight: 900, fontSize: 22, letterSpacing: 2, background: 'rgba(255,255,255,.85)',
+            transform: `rotate(${kind === 'left' ? 12 : -12}deg)`,
+          }}
+        >
+          {stamp.t}
+        </motion.div>
+      </motion.div>
+      {/* 指 */}
+      <motion.div
+        animate={{ x: [0, 0, dx, dx, 0], y: [0, 0, dy, dy, 0], opacity: [0, 1, 1, 0, 0] }}
+        transition={loop}
+        style={{ position: 'absolute', left: 84, top: 150, fontSize: 40, pointerEvents: 'none', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,.4))' }}
+      >
+        👆
+      </motion.div>
+    </div>
+  );
+}
+
+/** 検索のデモ：検索欄に文字が打ち込まれる */
+function DemoSearch() {
+  const full = '渋谷 ラーメン';
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setN((v) => (v >= full.length + 4 ? 0 : v + 1)), 260);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div style={{ width: 250, height: 250, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 16 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, background: '#fff', color: '#222', borderRadius: 14,
+        padding: '12px 14px', fontSize: 16, boxShadow: '0 6px 20px rgba(0,0,0,.3)',
+      }}>
+        <span>🔍</span>
+        <span>{full.slice(0, Math.min(n, full.length))}<span style={{ opacity: n % 2 ? 0 : 1 }}>|</span></span>
+      </div>
+      <div style={{ textAlign: 'center', fontSize: 40 }}>⬇️</div>
+      <div style={{ textAlign: 'center', color: '#fff', fontSize: 13, opacity: .85 }}>お店のカードが出てくるよ</div>
+    </div>
+  );
+}
+
+/** 初回起動時だけ出す、動くデモ付きの使い方案内（Tinder風） */
 export default function Onboarding({ reopenSignal = 0 }: { reopenSignal?: number }) {
   const [open, setOpen] = useState(false);
+  const [i, setI] = useState(0);
 
   useEffect(() => {
     try {
@@ -23,8 +107,15 @@ export default function Onboarding({ reopenSignal = 0 }: { reopenSignal?: number
   }, []);
 
   useEffect(() => {
-    if (reopenSignal > 0) setOpen(true);
+    if (reopenSignal > 0) { setI(0); setOpen(true); }
   }, [reopenSignal]);
+
+  // 一定時間ごとに次のステップへ（最後は止める）
+  useEffect(() => {
+    if (!open || i >= STEPS.length - 1) return;
+    const t = setTimeout(() => setI((v) => v + 1), STEP_MS);
+    return () => clearTimeout(t);
+  }, [open, i]);
 
   const close = () => {
     setOpen(false);
@@ -32,54 +123,62 @@ export default function Onboarding({ reopenSignal = 0 }: { reopenSignal?: number
   };
 
   if (!open) return null;
+  const step = STEPS[i];
+  const last = i === STEPS.length - 1;
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label="使い方"
-      onClick={close}
       style={{
-        position: 'fixed', inset: 0, zIndex: 6000, background: 'rgba(0,0,0,.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        position: 'fixed', inset: 0, zIndex: 6000, background: 'rgba(0,0,0,.82)', color: '#fff',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: '20px 24px', gap: 18, touchAction: 'none',
       }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
+      <button
+        type="button"
+        onClick={close}
         style={{
-          width: '100%', maxWidth: 380, maxHeight: '90dvh', overflowY: 'auto',
-          background: 'var(--card)', color: 'var(--text)', borderRadius: 20, padding: '22px 20px 18px',
-          boxShadow: '0 12px 40px rgba(0,0,0,.4)', border: '1px solid var(--border)',
+          position: 'absolute', top: 'max(14px, env(safe-area-inset-top))', right: 16, background: 'transparent',
+          border: '1px solid rgba(255,255,255,.5)', color: '#fff', borderRadius: 999, padding: '6px 14px', fontSize: 13, cursor: 'pointer',
         }}
       >
-        <div style={{ fontSize: 20, fontWeight: 800, textAlign: 'center' }}>Swipick の使い方</div>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', marginTop: 4 }}>
-          カードをスワイプして、行きたいお店を集めよう
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 18 }}>
-          {ROWS.map((r) => (
-            <div key={r.title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              <div style={{
-                width: 44, height: 44, borderRadius: 12, flexShrink: 0, fontSize: 24,
-                background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>{r.icon}</div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>{r.title}</div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: 2 }}>{r.text}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={close}
-          style={{
-            width: '100%', marginTop: 20, padding: '12px 0', border: 'none', borderRadius: 12,
-            background: 'var(--accent)', color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer',
-          }}
-        >
-          はじめる
-        </button>
+        スキップ
+      </button>
+
+      <div key={step.kind} style={{ height: 270, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {step.kind === 'search' ? <DemoSearch /> : <DemoCard kind={step.kind} />}
       </div>
+
+      <div style={{ textAlign: 'center', maxWidth: 320, minHeight: 78 }}>
+        <div style={{ fontSize: 20, fontWeight: 800 }}>{step.title}</div>
+        <div style={{ fontSize: 14, opacity: .85, lineHeight: 1.6, marginTop: 6 }}>{step.text}</div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        {STEPS.map((s, k) => (
+          <button
+            key={s.kind}
+            type="button"
+            aria-label={`${k + 1}つ目`}
+            onClick={() => setI(k)}
+            style={{ width: k === i ? 22 : 8, height: 8, borderRadius: 4, border: 'none', padding: 0, cursor: 'pointer', background: k === i ? '#fff' : 'rgba(255,255,255,.4)', transition: 'width .2s' }}
+          />
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => (last ? close() : setI(i + 1))}
+        style={{
+          minWidth: 200, padding: '12px 0', border: 'none', borderRadius: 999, fontWeight: 800, fontSize: 16, cursor: 'pointer',
+          background: last ? 'var(--accent, #1a73e8)' : '#fff', color: last ? '#fff' : '#111',
+        }}
+      >
+        {last ? 'はじめる' : '次へ'}
+      </button>
     </div>
   );
 }
