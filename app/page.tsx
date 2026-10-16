@@ -401,7 +401,7 @@ function DetailsModal({
                   style={{
                     flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                     gap: 4, padding: '10px 4px', borderRadius: 12, textDecoration: 'none', fontSize: 12, fontWeight: 700,
-                    background: b.primary ? 'var(--accent)' : 'var(--chip)',
+                    background: b.primary ? 'var(--accent-grad)' : 'var(--chip)',
                     color: b.primary ? '#fff' : 'var(--accent)',
                     border: 'none',
                   }}
@@ -508,7 +508,7 @@ function DetailsModal({
 }
 
 /** スタンプの文字サイズ（長い文言は小さくして枠からはみ出さないように） */
-const stampSize = (t: string) => (t.length <= 4 ? 58 : t.length <= 6 ? 46 : t.length <= 8 ? 36 : 28);
+const stampSize = (t: string) => (t.length <= 4 ? 48 : t.length <= 6 ? 40 : t.length <= 8 ? 32 : 26);
 
 /** ------------ 先頭カード（上=詳細 / 横=LIKE・NOPE） ------------ */
 const cardVariants: Variants = {
@@ -624,20 +624,22 @@ function SwipeableCard({
         background: 'linear-gradient(225deg, rgba(239,68,68,0.55), rgba(239,68,68,0) 65%)', opacity: nopeTint,
       }} />
       <motion.div style={{
-        position: 'absolute', top: 30, left: 14, padding: '2px 16px', borderRadius: 16,
-        border: '8px solid #10b981', color: '#10b981', background: 'rgba(255,255,255,0.12)',
+        position: 'absolute', top: 34, left: 16, padding: '6px 20px', borderRadius: 18,
+        border: '3px solid rgba(255,255,255,0.9)', color: '#fff',
+        background: 'linear-gradient(135deg, #34d399, #059669)',
+        textShadow: '0 2px 6px rgba(0,0,0,0.25)',
         fontWeight: 900, fontSize: stampSize(likeText), letterSpacing: 3, lineHeight: 1.15, whiteSpace: 'nowrap',
-        textShadow: '0 2px 0 rgba(255,255,255,0.7), 0 0 12px rgba(16,185,129,0.6)',
-        boxShadow: '0 0 0 2px rgba(255,255,255,0.8), 0 6px 18px rgba(16,185,129,0.45)',
-        opacity: likeOpacity, scale: likeScale, pointerEvents: 'none', zIndex: 7, rotate: -16,
+        boxShadow: '0 10px 28px rgba(16,185,129,0.55), inset 0 1px 0 rgba(255,255,255,0.4)',
+        opacity: likeOpacity, scale: likeScale, pointerEvents: 'none', zIndex: 7, rotate: -12,
       }}>{likeText}</motion.div>
       <motion.div style={{
-        position: 'absolute', top: 30, right: 14, padding: '2px 16px', borderRadius: 16,
-        border: '8px solid #ef4444', color: '#ef4444', background: 'rgba(255,255,255,0.12)',
+        position: 'absolute', top: 34, right: 16, padding: '6px 20px', borderRadius: 18,
+        border: '3px solid rgba(255,255,255,0.9)', color: '#fff',
+        background: 'linear-gradient(135deg, #fb7185, #e11d48)',
+        textShadow: '0 2px 6px rgba(0,0,0,0.25)',
         fontWeight: 900, fontSize: stampSize(nopeText), letterSpacing: 3, lineHeight: 1.15, whiteSpace: 'nowrap',
-        textShadow: '0 2px 0 rgba(255,255,255,0.7), 0 0 12px rgba(239,68,68,0.6)',
-        boxShadow: '0 0 0 2px rgba(255,255,255,0.8), 0 6px 18px rgba(239,68,68,0.45)',
-        opacity: nopeOpacity, scale: nopeScale, pointerEvents: 'none', zIndex: 7, rotate: 16,
+        boxShadow: '0 10px 28px rgba(239,68,68,0.55), inset 0 1px 0 rgba(255,255,255,0.4)',
+        opacity: nopeOpacity, scale: nopeScale, pointerEvents: 'none', zIndex: 7, rotate: 12,
       }}>{nopeText}</motion.div>
 
       {/* 画像エリア（ここだけスクロール抑止） */}
@@ -761,6 +763,8 @@ export default function Home() {
   /** スワイプ履歴（やり直し用）・飛ばす方向（アニメ用） */
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [exitDir, setExitDir] = useState<SwipeDir | null>(null);
+  const themeAppliedRef = useRef(false);
+  const [burstKey, setBurstKey] = useState(0); // 右スワイプで保存したとき、ハートがぽんと弾ける演出用
 
   /** 最新値を非同期処理から参照するための ref */
   const seenRef = useRef<string[]>(seenIds);
@@ -792,18 +796,30 @@ export default function Home() {
   useEffect(() => {
     if (!themeLoaded || !accentLoaded) return; // 読み込み前に上書きしない（ちらつき防止）
     const root = document.documentElement;
-    if (theme === 'auto') root.removeAttribute('data-theme');
-    else root.setAttribute('data-theme', theme);
+    const applyTheme = () => {
+      if (theme === 'auto') root.removeAttribute('data-theme');
+      else root.setAttribute('data-theme', theme);
+    };
+    // ライト/ダークを切り替えたときは、画面全体がふわっと入れ替わるようにする（対応ブラウザのみ。最初の読み込みでは動かさない）
+    const vt = (document as Document & { startViewTransition?: (cb: () => void) => unknown }).startViewTransition;
+    if (themeAppliedRef.current && typeof vt === 'function' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      vt.call(document, applyTheme);
+    } else {
+      applyTheme();
+    }
+    themeAppliedRef.current = true;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const apply = () => {
       const a = ACCENTS.find((x) => x.id === accent);
       if (!a || a.id === 'blue') {
         root.style.removeProperty('--accent');
         root.style.removeProperty('--accent-bg');
+        root.style.removeProperty('--accent-grad'); // 青は globals.css の初期値を使う
         return;
       }
       const dark = theme === 'dark' || (theme === 'auto' && mq.matches);
       const c = dark ? a.dark : a.light;
+      root.style.setProperty('--accent-grad', `linear-gradient(135deg, ${c}, ${dark ? a.toDark : a.to})`);
       root.style.setProperty('--accent', c);
       root.style.setProperty('--accent-bg', `color-mix(in srgb, ${c} ${dark ? 18 : 14}%, transparent)`);
     };
@@ -1037,6 +1053,7 @@ export default function Home() {
     const autoTags = autoTagsRaw.filter((t) => existingAllTags.includes(t));
     const addedTags = existing ? autoTags.filter((t) => !(existing.tags || []).includes(t)) : [];
     if (dir === 'right') {
+      setBurstKey((n) => n + 1);
       if (!already) setFavorites((prev) => (prev.some((p) => p.id === card.id) ? prev : [...prev, { ...card, tags: [...autoTags], addedAt: Date.now() }]));
       else if (addedTags.length > 0) setFavorites((prev) => prev.map((f) => (f.id === card.id ? { ...f, tags: Array.from(new Set([...(f.tags || []), ...addedTags])) } : f)));
     } else {
@@ -1402,6 +1419,7 @@ export default function Home() {
       <Onboarding reopenSignal={guideSignal} />
       {/* ===== 探す ===== */}
       <div
+        className="tab-fade"
         style={{
           display: tab === 'search' ? 'flex' : 'none',
           flexDirection: 'column', alignItems: 'center', gap: 10,
@@ -1703,6 +1721,7 @@ export default function Home() {
       >
       {/* ===== 設定 ===== */}
       <div
+        className="tab-fade"
         style={{
           display: tab === 'settings' ? 'block' : 'none',
           maxWidth: 560, margin: '0 auto', padding: '16px 16px 24px', boxSizing: 'border-box',
@@ -1726,6 +1745,7 @@ export default function Home() {
 
       {/* ===== 保存済み（Googleマップの「保存済み」風） ===== */}
       <div
+        className="tab-fade"
         style={{
           display: tab === 'saved' ? 'block' : 'none',
           maxWidth: 560, margin: '0 auto', padding: '16px 16px 24px', boxSizing: 'border-box',
@@ -1752,7 +1772,7 @@ export default function Home() {
 
       {/* ===== 地図 ===== */}
       {tab === 'map' && (
-        <div style={{ maxWidth: 560, margin: '0 auto', padding: '16px 16px 24px', boxSizing: 'border-box' }}>
+        <div className="tab-fade" style={{ maxWidth: 560, margin: '0 auto', padding: '16px 16px 24px', boxSizing: 'border-box' }}>
           <h1 style={{ margin: '4px 2px 12px', fontSize: 28, fontWeight: 800, letterSpacing: 0.5 }}>地図</h1>
           <div style={{ position: 'relative', marginBottom: 10 }}>
             <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}>
@@ -1800,6 +1820,41 @@ export default function Home() {
 
       </div>
 
+      {/* 保存したときのハートの演出 */}
+      <AnimatePresence>
+        {burstKey > 0 && tab === 'search' && (
+          <motion.div
+            key={burstKey}
+            aria-hidden="true"
+            initial={{ opacity: 0, scale: 0.4, y: 0 }}
+            animate={{ opacity: [0, 1, 1, 0], scale: [0.4, 1.25, 1, 1.1], y: [0, -10, -30, -70] }}
+            transition={{ duration: 0.85, times: [0, 0.25, 0.6, 1], ease: 'easeOut' }}
+            onAnimationComplete={() => { /* 同じkeyのまま残らないよう、次の保存でkeyが変わるまで非表示 */ }}
+            style={{
+              position: 'fixed', left: '50%', top: '38%', zIndex: 3500, pointerEvents: 'none',
+              marginLeft: -36, filter: 'drop-shadow(0 8px 18px rgba(16,185,129,0.55))',
+            }}
+          >
+            <Icon name="heart" size={72} color="#10b981" />
+            {/* まわりに飛び散る小さなハート */}
+            {[0, 1, 2, 3, 4, 5].map((i) => {
+              const ang = (i / 6) * Math.PI * 2 - Math.PI / 2;
+              return (
+                <motion.span
+                  key={i}
+                  initial={{ opacity: 0, x: 36, y: 36, scale: 0.3 }}
+                  animate={{ opacity: [0, 1, 0], x: 36 + Math.cos(ang) * 74, y: 36 + Math.sin(ang) * 74, scale: [0.3, 0.9, 0.5] }}
+                  transition={{ duration: 0.7, ease: 'easeOut' }}
+                  style={{ position: 'absolute', left: -9, top: -9, display: 'flex' }}
+                >
+                  <Icon name="heart" size={18} color={i % 2 ? '#34d399' : '#fb7185'} />
+                </motion.span>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ===== 下タブ ===== */}
       <nav
         aria-label="メインメニュー"
@@ -1842,7 +1897,7 @@ export default function Home() {
                     style={{
                       width: 42, height: 42, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                       flex: '0 0 auto',
-                      background: active ? 'var(--accent)' : 'transparent',
+                      background: active ? 'var(--accent-grad)' : 'transparent',
                       color: active ? '#fff' : 'inherit',
                       boxShadow: active ? '0 6px 14px color-mix(in srgb, var(--accent) 45%, transparent)' : 'none',
                       border: active ? '4px solid var(--card)' : '4px solid transparent',

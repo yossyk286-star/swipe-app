@@ -212,7 +212,7 @@ export default function Onboarding({ reopenSignal = 0 }: { reopenSignal?: number
         onClick={() => (last ? close() : setI(i + 1))}
         style={{
           minWidth: 200, padding: '12px 0', border: 'none', borderRadius: 999, fontWeight: 800, fontSize: 16, cursor: 'pointer',
-          background: last ? 'var(--accent, #1a73e8)' : '#fff', color: last ? '#fff' : '#111',
+          background: last ? 'var(--accent-grad, var(--accent, #1a73e8))' : '#fff', color: last ? '#fff' : '#111',
         }}
       >
         {last ? 'はじめる' : '次へ'}
