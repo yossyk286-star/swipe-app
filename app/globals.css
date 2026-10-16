@@ -123,3 +123,12 @@ button:disabled {
   overflow: hidden !important;
   max-height: none !important;
 }
+
+/* 探す画面の操作ボタン：押したときに少し縮む */
+.act-btn {
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.act-btn:active:not(:disabled) {
+  transform: scale(0.88);
+}
