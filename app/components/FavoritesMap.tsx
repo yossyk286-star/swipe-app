@@ -213,10 +213,11 @@ function LeafletMap({
         style={{
           width: '100%',
           height,
-          borderRadius: 12,
+          borderRadius: 22,
           overflow: 'hidden',
           background: 'var(--chip)',
-          boxShadow: '0 4px 12px var(--elev)',
+          border: '1px solid var(--border)',
+          boxShadow: '0 4px 16px color-mix(in srgb, var(--elev) 55%, transparent)',
         }}
       />
       {status !== 'ready' && (

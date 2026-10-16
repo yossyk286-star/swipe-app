@@ -35,14 +35,18 @@ export const ACCENTS = [
 export type AccentId = (typeof ACCENTS)[number]['id'];
 
 const section: React.CSSProperties = {
-  marginTop: 16, padding: 16, borderRadius: 14, boxSizing: 'border-box',
-  background: 'var(--card)', boxShadow: '0 1px 4px var(--elev)',
+  marginTop: 16, padding: 18, borderRadius: 22, boxSizing: 'border-box',
+  background: 'var(--card)', border: '1px solid var(--border)',
+  boxShadow: '0 2px 10px color-mix(in srgb, var(--elev) 50%, transparent)',
 };
-const heading: React.CSSProperties = { fontWeight: 600, fontSize: 15, marginBottom: 10 };
+const heading: React.CSSProperties = {
+  fontWeight: 800, fontSize: 15, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8,
+  borderLeft: '4px solid var(--accent)', paddingLeft: 10, lineHeight: 1.2,
+};
 const hint: React.CSSProperties = { color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6, marginTop: 8 };
 
 const pill = (active: boolean): React.CSSProperties => ({
-  flex: '1 1 0', minWidth: 0, padding: '10px 6px', borderRadius: 10, fontSize: 13, fontWeight: active ? 700 : 500,
+  flex: '1 1 0', minWidth: 0, padding: '11px 6px', borderRadius: 14, fontSize: 13, fontWeight: active ? 700 : 500,
   border: active ? '2px solid var(--accent)' : '1px solid var(--border)',
   background: active ? 'var(--accent-bg)' : 'transparent',
   color: active ? 'var(--accent)' : 'var(--text)',
@@ -52,8 +56,8 @@ const textInput: React.CSSProperties = {
   border: '2px solid var(--border)', background: 'var(--card)',
 };
 const action: React.CSSProperties = {
-  padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)',
-  background: 'transparent', color: 'var(--text)', fontSize: 13,
+  padding: '11px 16px', borderRadius: 999, border: '1px solid var(--border)',
+  background: 'var(--card)', color: 'var(--text)', fontSize: 13, fontWeight: 600,
 };
 
 function ToggleRow({ label, desc, on, onChange }: { label: string; desc: string; on: boolean; onChange: (v: boolean) => void }) {
@@ -107,7 +111,7 @@ export default function SettingsView({
 
   return (
     <div>
-      <h1 style={{ margin: '4px 2px 4px', fontSize: 24, fontWeight: 600 }}>設定</h1>
+      <h1 style={{ margin: '4px 2px 4px', fontSize: 28, fontWeight: 800, letterSpacing: 0.5 }}>設定</h1>
 
       <section style={section}>
         <div style={heading}>テーマ</div>
