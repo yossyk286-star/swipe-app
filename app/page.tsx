@@ -812,7 +812,7 @@ export default function Home() {
     return () => mq.removeEventListener('change', apply);
   }, [theme, accent, themeLoaded, accentLoaded]);
 
-  const [mapTag, setMapTag] = useState<string | null>(null);
+  const [mapTagSel, setMapTagSel] = useState<string[]>([]); // 地図で選んでいるタグ（複数はOR＝どれかに当てはまる）
   const [mapQuery, setMapQuery] = useState('');
 
   // タグ編集シートの対象（お店のID。複数ならまとめて編集）／タグ管理
@@ -1156,7 +1156,7 @@ export default function Home() {
       const { [oldName]: ic, ...rest } = prev;
       return n in rest ? rest : { ...rest, [n]: ic };
     });
-    setMapTag((prev) => (prev === oldName ? n : prev));
+    setMapTagSel((prev) => prev.map((t) => (t === oldName ? n : t)));
   }
   function deleteTag(tag: string) {
     setFavorites((prev) => prev.map((f) =>
@@ -1168,7 +1168,7 @@ export default function Home() {
       const { [tag]: _removed, ...rest } = prev; // eslint-disable-line @typescript-eslint/no-unused-vars
       return rest;
     });
-    setMapTag((prev) => (prev === tag ? null : prev));
+    setMapTagSel((prev) => prev.filter((t) => t !== tag));
   }
 
   /** タグ編集シートの対象 */
@@ -1181,10 +1181,10 @@ export default function Home() {
   /** 地図タブ */
   // 地図のタグ：保存済みのお店が1件もないタグは出さない
   const mapTags = useMemo(() => existingAllTags.filter((t) => (tagCounts[t] ?? 0) > 0), [existingAllTags, tagCounts]);
-  const effMapTag = mapTag !== null && mapTags.includes(mapTag) ? mapTag : null;
+  const effMapTags = useMemo(() => mapTagSel.filter((t) => mapTags.includes(t)), [mapTagSel, mapTags]);
   const mapFavorites = useMemo(
     () => {
-      let arr = effMapTag !== null ? favorites.filter((f) => f.tags?.includes(effMapTag)) : favorites;
+      let arr = effMapTags.length > 0 ? favorites.filter((f) => effMapTags.some((t) => f.tags?.includes(t))) : favorites;
       // フリーワード：スペース区切りは AND（店名・住所・タグ・ジャンルが対象）
       const words = mapQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
       if (words.length > 0) {
@@ -1195,7 +1195,7 @@ export default function Home() {
       }
       return arr;
     },
-    [favorites, effMapTag, mapQuery]
+    [favorites, effMapTags, mapQuery]
   );
   const mapItems: MapItem[] = useMemo(() => mapFavorites
     .filter((f) => f.lat != null && f.lng != null)
@@ -1205,9 +1205,10 @@ export default function Home() {
         priceLabel(f.priceLevel),
         formatDistance(distanceTo(userPos, f.lat, f.lng)),
       ].filter(Boolean).join(' · ');
-      const tagForIcon = (f.tags || []).find((t) => tagIcons[t]);
+      // ピンの絵文字：タグで絞っているときは、選んだタグのアイコンを優先する
+      const tagForIcon = (effMapTags.length > 0 ? (f.tags || []).find((t) => effMapTags.includes(t) && tagIcons[t]) : undefined) ?? (f.tags || []).find((t) => tagIcons[t]);
       return { id: f.id, name: f.name, lat: f.lat as number, lng: f.lng as number, sub, href: mapsPlaceUrl(f.name, f.id), image: f.photoRefs?.[0] ? photoUrl(f.photoRefs[0], 300) : (f.image || undefined), emoji: tagForIcon ? tagIcons[tagForIcon] : undefined };
-    }), [mapFavorites, userPos, tagIcons]);
+    }), [mapFavorites, userPos, tagIcons, effMapTags]);
   const openDetailsById = useCallback((id: string) => openDetails(id), [openDetails]);
 
   function selectTab(next: MainTab) {
@@ -1742,7 +1743,7 @@ export default function Home() {
           onEditTags={(ids) => setTagSheetIds(ids)}
           onDelete={deleteFavorite}
           onShare={shareFavorites}
-          onShowOnMap={(tag) => { setMapTag(tag); selectTab('map'); }}
+          onShowOnMap={(tag) => { setMapTagSel(tag ? [tag] : []); selectTab('map'); }}
           onCreateTag={createTag}
           onManageTags={() => setTagManagerOpen(true)}
           onGoSearch={() => selectTab('search')}
@@ -1779,9 +1780,9 @@ export default function Home() {
             )}
           </div>
           <div className="hscroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 12 }}>
-            <button onClick={() => setMapTag(null)} style={accentChip(effMapTag === null)}>すべて</button>
+            <button onClick={() => setMapTagSel([])} style={accentChip(effMapTags.length === 0)}>すべて</button>
             {mapTags.map((t) => (
-              <button key={t} onClick={() => setMapTag(t)} style={accentChip(effMapTag === t)}>{tagIcons[t] ? `${tagIcons[t]} ` : ''}{t}</button>
+              <button key={t} onClick={() => setMapTagSel((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]))} style={accentChip(effMapTags.includes(t))}>{tagIcons[t] ? `${tagIcons[t]} ` : ''}{t}</button>
             ))}
           </div>
           <FavoritesMap
