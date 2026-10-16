@@ -30,8 +30,8 @@ const sheetStyle: React.CSSProperties = {
 const chipStyle = (active: boolean): React.CSSProperties => ({
   padding: '8px 14px',
   borderRadius: 999,
-  border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
-  background: active ? 'var(--primary)' : 'var(--card)',
+  border: 'none',
+  background: active ? 'var(--primary)' : 'var(--chip)',
   color: active ? 'var(--bg)' : 'var(--text)',
   fontSize: 14,
   fontWeight: 700,
@@ -59,8 +59,8 @@ const primaryBtn = (disabled: boolean): React.CSSProperties => ({
 const subBtn: React.CSSProperties = {
   padding: '8px 12px',
   borderRadius: 8,
-  border: '1px solid var(--border)',
-  background: 'var(--card)',
+  border: 'none',
+  background: 'var(--chip)',
   color: 'var(--text)',
   fontSize: 13,
 };

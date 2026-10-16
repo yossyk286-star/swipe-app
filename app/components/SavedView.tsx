@@ -45,8 +45,8 @@ const pillBase: React.CSSProperties = {
   gap: 6,
   padding: '7px 14px',
   borderRadius: 999,
-  border: '1px solid var(--border)',
-  background: 'var(--card)',
+  border: 'none',
+  background: 'var(--chip)',
   color: 'var(--text)',
   fontSize: 13,
   whiteSpace: 'nowrap',
@@ -68,8 +68,8 @@ const rowPill: React.CSSProperties = { padding: '7px 11px', gap: 4, fontSize: 13
 const chip = (active: boolean): React.CSSProperties => ({
   ...pillBase,
   padding: '6px 12px',
-  border: active ? '1px solid transparent' : '1px solid var(--border)',
-  background: active ? 'var(--accent-bg)' : 'var(--card)',
+  border: 'none',
+  background: active ? 'var(--accent-bg)' : 'var(--chip)',
   color: active ? 'var(--accent)' : 'var(--text)',
   fontWeight: active ? 700 : 500,
 });
@@ -355,8 +355,8 @@ function PlaceRow({
             style={{
               ...pillBase, ...rowPill, marginLeft: 'auto',
               color: 'var(--danger, #dc2626)',
-              border: '1px solid color-mix(in srgb, var(--danger, #dc2626) 40%, transparent)',
-              background: 'color-mix(in srgb, var(--danger, #dc2626) 8%, var(--card))',
+              border: 'none',
+              background: 'color-mix(in srgb, var(--danger, #dc2626) 10%, var(--chip))',
               fontWeight: 600,
             }}
             aria-label={`${f.name} を削除`}

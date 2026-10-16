@@ -47,8 +47,8 @@ const hint: React.CSSProperties = { color: 'var(--text-muted)', fontSize: 12, li
 
 const pill = (active: boolean): React.CSSProperties => ({
   flex: '1 1 auto', minWidth: 0, padding: '11px 4px', borderRadius: 14, fontSize: 12.5, whiteSpace: 'nowrap', fontWeight: active ? 700 : 500,
-  border: active ? '2px solid var(--accent)' : '1px solid var(--border)',
-  background: active ? 'var(--accent-bg)' : 'transparent',
+  border: 'none',
+  background: active ? 'var(--accent-bg)' : 'var(--chip)',
   color: active ? 'var(--accent)' : 'var(--text)',
 });
 const textInput: React.CSSProperties = {
@@ -56,8 +56,8 @@ const textInput: React.CSSProperties = {
   border: '2px solid var(--border)', background: 'var(--card)',
 };
 const action: React.CSSProperties = {
-  padding: '11px 16px', borderRadius: 999, border: '1px solid var(--border)',
-  background: 'var(--card)', color: 'var(--text)', fontSize: 13, fontWeight: 600,
+  padding: '11px 16px', borderRadius: 999, border: 'none',
+  background: 'var(--chip)', color: 'var(--text)', fontSize: 13, fontWeight: 600,
 };
 
 function ToggleRow({ label, desc, on, onChange }: { label: string; desc: string; on: boolean; onChange: (v: boolean) => void }) {

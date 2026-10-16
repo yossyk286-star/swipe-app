@@ -208,7 +208,7 @@ export default function ShareClient() {
                     href={mapsDirectionsUrl(f.name, f.placeId)}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ fontSize: 12, color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', textDecoration: 'none' }}
+                    style={{ fontSize: 12, color: 'var(--text)', border: 'none', background: 'var(--chip)', borderRadius: 8, padding: '5px 10px', textDecoration: 'none' }}
                   >
                     🚶 経路
                   </a>
@@ -216,7 +216,7 @@ export default function ShareClient() {
                     href={mapsPlaceUrl(f.name, f.placeId)}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ fontSize: 12, color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', textDecoration: 'none' }}
+                    style={{ fontSize: 12, color: 'var(--text)', border: 'none', background: 'var(--chip)', borderRadius: 8, padding: '5px 10px', textDecoration: 'none' }}
                   >
                     🗺 地図
                   </a>
