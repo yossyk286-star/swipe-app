@@ -700,8 +700,8 @@ function SwipeableCard({
       {/* 店名＋評価・価格・距離＋住所（写真の下に重ねる） */}
       <div style={{
         position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 5, pointerEvents: 'none',
-        padding: '72px 18px 18px', color: '#fff',
-        background: 'linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.55) 55%, rgba(0,0,0,0) 100%)',
+        padding: '84px 18px 18px', color: '#fff',
+        background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.7) 45%, rgba(0,0,0,0.32) 78%, rgba(0,0,0,0) 100%)',
         textShadow: '0 1px 6px rgba(0,0,0,0.45)',
       }}>
         <span style={{
