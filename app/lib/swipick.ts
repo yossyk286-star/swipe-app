@@ -23,13 +23,19 @@ export type PlaceCard = {
 
 export type Favorite = PlaceCard & { tags: string[]; addedAt?: number };
 
+/** Google の営業時間（day: 0=日曜〜6=土曜、time: 'HHMM'） */
+export type OpeningPeriod = {
+  open?: { day: number; time?: string };
+  close?: { day: number; time?: string };
+};
+
 export type PlaceDetails = {
   name: string | null;
   address: string | null;
   website: string | null;
   mapUrl: string | null;
   phone: string | null;
-  openingHours: { open_now?: boolean; weekday_text?: string[] } | null;
+  openingHours: { open_now?: boolean; weekday_text?: string[]; periods?: OpeningPeriod[] } | null;
   types: string[];
   rating: number | null;
   userRatingsTotal: number;
@@ -98,6 +104,62 @@ export const TAG_ICON_CHOICES = [
   '🍢', '🦐', '🥩', '🍛', '🌶️', '🍨', '🎂', '🍩',
   '❤️', '⭐', '🔥', '🎉', '💼', '👫', '🏠', '📌',
 ] as const;
+
+/** ------------ 営業時間の目印 ------------ */
+const hhmm = (t: string) => `${Number(t.slice(0, 2))}:${t.slice(2, 4)}`;
+const toMin = (day: number, t: string) => day * 1440 + Number(t.slice(0, 2)) * 60 + Number(t.slice(2, 4));
+const WEEK = 7 * 1440;
+
+/**
+ * 「あと◯分で閉店」「◯時に開店」などの目印を作る。営業時間のデータ（periods）がなければ null。
+ * 時刻は端末の現在時刻で計算する（日本のお店を日本で見る前提）。
+ */
+export function hoursStatus(
+  oh: { open_now?: boolean; periods?: OpeningPeriod[] } | null | undefined,
+  now: Date = new Date()
+): { text: string; tone: 'open' | 'soon' | 'closed' } | null {
+  const periods = oh?.periods;
+  if (!oh || !Array.isArray(periods) || periods.length === 0) return null;
+  // 24時間営業（day0・0000オープンでcloseなし）
+  if (periods.length === 1 && periods[0].open && !periods[0].close) return { text: '24時間営業', tone: 'open' };
+
+  const nowMin = now.getDay() * 1440 + now.getHours() * 60 + now.getMinutes();
+  type R = { start: number; end: number; closeT: string; openT: string };
+  const ranges: R[] = [];
+  for (const p of periods) {
+    if (!p.open?.time || !p.close?.time || typeof p.open.day !== 'number' || typeof p.close.day !== 'number') continue;
+    const start = toMin(p.open.day, p.open.time);
+    let end = toMin(p.close.day, p.close.time);
+    if (end <= start) end += WEEK;
+    ranges.push({ start, end, closeT: p.close.time, openT: p.open.time });
+  }
+  if (ranges.length === 0) return null;
+
+  // いま営業している区間（週をまたぐ分も見る）
+  for (const r of ranges) {
+    for (const off of [0, WEEK]) {
+      const s = r.start - off;
+      const e = r.end - off;
+      if (nowMin >= s && nowMin < e) {
+        const left = e - nowMin;
+        const closeLabel = hhmm(r.closeT);
+        if (left <= 90) return { text: `あと${left}分で閉店（${closeLabel}）`, tone: left <= 30 ? 'soon' : 'open' };
+        return { text: `${closeLabel}まで営業`, tone: 'open' };
+      }
+    }
+  }
+  // 次に開く時刻
+  let best: { wait: number; openT: string; day: number } | null = null;
+  for (const r of ranges) {
+    let wait = (r.start - nowMin + WEEK) % WEEK;
+    if (wait === 0) wait = WEEK;
+    if (!best || wait < best.wait) best = { wait, openT: r.openT, day: Math.floor((nowMin + wait) / 1440) % 7 };
+  }
+  if (!best) return null;
+  const todayDay = now.getDay();
+  const label = best.day === todayDay && best.wait < 1440 ? '' : best.day === (todayDay + 1) % 7 && best.wait < 2880 ? '明日の' : `${['日', '月', '火', '水', '木', '金', '土'][best.day]}曜の`;
+  return { text: `${label}${hhmm(best.openT)}に開店`, tone: 'closed' };
+}
 
 /** ------------ 距離 ------------ */
 export function haversineMeters(a: LatLng, b: LatLng) {
@@ -249,9 +311,8 @@ function fromBase64Url(s: string) {
 
 export function encodeShare(favs: Favorite[]): string {
   const items: SharedItem[] = favs.map((f) => {
-    const ref = f.photoRefs?.[f.currentIdx ?? 0] || f.photoRefs?.[0] || getRefFromImageUrl(f.image);
+    // 写真の情報（refはとても長い）は入れない。受け取った側のページで、見える分だけ後から取得する
     const it: SharedItem = { n: f.name, p: f.id };
-    if (ref) it.r = ref;
     if (f.lat != null && f.lng != null) it.a = [Math.round(f.lat * 1e5) / 1e5, Math.round(f.lng * 1e5) / 1e5];
     return it;
   });

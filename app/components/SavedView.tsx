@@ -354,6 +354,7 @@ export type SavedViewProps = {
   tagIcons?: Record<string, string>;
   tagCounts: Record<string, number>;
   userPos: LatLng | null;
+  onRequestLocation?: (onDone: (ok: boolean) => void) => void;
   onOpenDetails: (id: string, name?: string) => void;
   onEditTags: (ids: string[]) => void;
   onDelete: (id: string) => void;
@@ -368,7 +369,7 @@ export type SavedViewProps = {
 
 export default function SavedView(props: SavedViewProps) {
   const {
-    favorites, allTags, tagIcons = {}, tagCounts, userPos,
+    favorites, allTags, tagIcons = {}, tagCounts, userPos, onRequestLocation,
     onOpenDetails, onEditTags, onDelete, onShare, onShowOnMap, onCreateTag, onManageTags,
     onGoSearch, active = true,
   } = props;
@@ -376,6 +377,7 @@ export default function SavedView(props: SavedViewProps) {
   const [openList, setOpenList] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortMode>('new');
+  const [locState, setLocState] = useState<'idle' | 'loading' | 'failed'>('idle');
   const [minRating, setMinRating] = useState(0);
   const [filterOpen, setFilterOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
@@ -574,7 +576,17 @@ export default function SavedView(props: SavedViewProps) {
 
         <div className="hscroll" style={{ display: 'flex', gap: 8, margin: '12px 0 2px', overflowX: 'auto' }}>
           {([['new', '新しい順'], ['rating', '評価順'], ['near', '近い順']] as [SortMode, string][]).map(([k, label]) => (
-            <button key={k} onClick={() => setSort(k)} style={chip(sort === k)}>{label}</button>
+            <button
+              key={k}
+              onClick={() => {
+                setSort(k);
+                if (k === 'near' && onRequestLocation) {
+                  setLocState('loading');
+                  onRequestLocation((ok) => setLocState(ok ? 'idle' : 'failed'));
+                }
+              }}
+              style={chip(sort === k)}
+            >{label}</button>
           ))}
           <button
             onClick={() => setFilterOpen((o) => !o)}
@@ -584,6 +596,14 @@ export default function SavedView(props: SavedViewProps) {
             絞り込み{filterActive ? '（ON）' : ''} {filterOpen ? '▲' : '▼'}
           </button>
         </div>
+
+        {sort === 'near' && !userPos && (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', margin: '6px 2px 0' }}>
+            {locState === 'failed'
+              ? '現在地を取得できませんでした。位置情報の許可を確認してください（許可するまで並び替えできません）。'
+              : '現在地を取得中…'}
+          </div>
+        )}
 
         {filterOpen && (
           <div
